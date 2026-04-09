@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { readConversationDetail } from "@/lib/agents/conversation-store";
+import { markdownToHtml } from "@/lib/markdown/to-html";
+import { CopyButton } from "./copy-button";
+import { TranscriptViewer } from "./transcript-viewer";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +45,9 @@ export default async function ConversationTranscriptPage({
     notFound();
   }
 
+  const promptText = detail.request || detail.meta.title;
+  const promptHtml = promptText ? await markdownToHtml(promptText) : "";
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-8">
@@ -73,15 +79,33 @@ export default async function ConversationTranscriptPage({
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
           <section className="rounded-3xl border border-border bg-card/80 p-6 shadow-sm">
-            <div className="mb-4 space-y-1">
-              <h2 className="text-lg font-semibold tracking-tight">Requested Prompt</h2>
-              <p className="text-sm text-muted-foreground">
-                The original task request that started this run.
-              </p>
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <h2 className="text-lg font-semibold tracking-tight">Requested Prompt</h2>
+                <p className="text-sm text-muted-foreground">
+                  The original task request that started this run.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href="#transcript"
+                  className="inline-flex h-8 items-center rounded-full border border-border px-3 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                >
+                  Open Transcript
+                </a>
+                <CopyButton text={promptText} />
+              </div>
             </div>
-            <pre className="whitespace-pre-wrap break-words rounded-2xl bg-muted/30 p-4 font-mono text-[12px] leading-relaxed text-foreground">
-              {detail.request || detail.meta.title}
-            </pre>
+            {promptHtml ? (
+              <div
+                className="rounded-2xl bg-muted/30 p-4 max-h-64 overflow-y-auto overflow-x-hidden prose prose-sm prose-invert max-w-none prose-headings:font-semibold prose-headings:text-foreground prose-h1:text-base prose-h2:text-[13px] prose-h3:text-[12px] prose-p:text-[13px] prose-p:text-foreground/85 prose-li:text-[13px] prose-li:text-foreground/85 prose-a:text-foreground prose-code:text-[11px] prose-code:text-foreground prose-code:bg-background prose-code:px-1 prose-code:rounded prose-pre:bg-background prose-pre:border-0 prose-pre:text-foreground prose-strong:text-foreground"
+                dangerouslySetInnerHTML={{ __html: promptHtml }}
+              />
+            ) : (
+              <pre className="whitespace-pre-wrap break-words rounded-2xl bg-muted/30 p-4 max-h-64 overflow-y-auto overflow-x-hidden font-mono text-[12px] leading-relaxed text-foreground">
+                {promptText}
+              </pre>
+            )}
           </section>
 
           <section className="space-y-6">
@@ -126,17 +150,7 @@ export default async function ConversationTranscriptPage({
           </section>
         </div>
 
-        <section className="rounded-3xl border border-border bg-card/80 p-6 shadow-sm">
-          <div className="mb-4 space-y-1">
-            <h2 className="text-lg font-semibold tracking-tight">Transcript</h2>
-            <p className="text-sm text-muted-foreground">
-              Full session transcript for debugging, review, or copy-paste.
-            </p>
-          </div>
-          <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-2xl bg-muted/30 p-4 font-mono text-[12px] leading-relaxed text-foreground">
-            {detail.transcript || "No transcript captured."}
-          </pre>
-        </section>
+        <TranscriptViewer text={detail.transcript || "No transcript captured."} />
       </div>
     </main>
   );
