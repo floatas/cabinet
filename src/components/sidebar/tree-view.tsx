@@ -7,12 +7,28 @@ import { useAppStore } from "@/stores/app-store";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TreeNode } from "./tree-node";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
   ChevronRight,
   Plus,
   BookOpen,
   Users,
   Bot,
   Pencil,
+  FilePlus,
+  FolderOpen,
   Crown,
   Megaphone,
   Search,
@@ -85,6 +101,7 @@ const itemClass = (active: boolean) =>
 export function TreeView() {
   const { nodes, loading, selectedPath } = useTreeStore();
   const selectPage = useTreeStore((s) => s.selectPage);
+  const createPage = useTreeStore((s) => s.createPage);
   const loadPage = useEditorStore((s) => s.loadPage);
   const section = useAppStore((s) => s.section);
   const setSection = useAppStore((s) => s.setSection);
@@ -93,6 +110,11 @@ export function TreeView() {
   const [agentsExpanded, setAgentsExpanded] = useState(true);
   const [kbExpanded, setKbExpanded] = useState(true);
   const [agents, setAgents] = useState<AgentSummary[]>([]);
+  const [kbSubPageOpen, setKbSubPageOpen] = useState(false);
+  const [kbSubPageTitle, setKbSubPageTitle] = useState("");
+  const [kbCreating, setKbCreating] = useState(false);
+  const [kbRenameOpen, setKbRenameOpen] = useState(false);
+  const [kbRenameTitle, setKbRenameTitle] = useState("");
 
   // When a KB page is clicked (via TreeNode), switch section to "page"
   useEffect(() => {
@@ -156,6 +178,7 @@ export function TreeView() {
   const pad = (depth: number) => ({ paddingLeft: `${depth * 16 + 8}px` });
 
   return (
+    <>
     <ScrollArea className="flex-1 min-h-0">
       <div className="py-1">
         {/* ── Cabinet (depth 0) ───────────────────────────── */}
@@ -245,36 +268,60 @@ export function TreeView() {
             )}
 
             {/* ── Knowledge Base (depth 1) ─────────────────── */}
-            <div
-              className={itemClass(section.type === "page" && selectedPath === "")}
-              style={pad(1)}
-            >
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setKbExpanded(!kbExpanded);
-                }}
-                className="shrink-0"
-              >
-                <ChevronRight
-                  className={cn(
-                    "h-3.5 w-3.5 text-muted-foreground/70 transition-transform duration-150",
-                    kbExpanded && "rotate-90"
-                  )}
-                />
-              </button>
-              <button
-                onClick={() => {
-                  selectPage("");
-                  loadPage("");
-                  setSection({ type: "page" });
-                }}
-                className="flex items-center gap-1.5 min-w-0 flex-1"
-              >
-                <BookOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
-                Knowledge Base
-              </button>
-            </div>
+            <ContextMenu>
+              <ContextMenuTrigger>
+                <div
+                  className={itemClass(section.type === "page" && selectedPath === "")}
+                  style={pad(1)}
+                >
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setKbExpanded(!kbExpanded);
+                    }}
+                    className="shrink-0"
+                  >
+                    <ChevronRight
+                      className={cn(
+                        "h-3.5 w-3.5 text-muted-foreground/70 transition-transform duration-150",
+                        kbExpanded && "rotate-90"
+                      )}
+                    />
+                  </button>
+                  <button
+                    onClick={() => {
+                      selectPage("");
+                      loadPage("");
+                      setSection({ type: "page" });
+                    }}
+                    className="flex items-center gap-1.5 min-w-0 flex-1"
+                  >
+                    <BookOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    Knowledge Base
+                  </button>
+                </div>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem onClick={() => setKbSubPageOpen(true)}>
+                  <FilePlus className="h-4 w-4 mr-2" />
+                  Add Sub Page
+                </ContextMenuItem>
+                <ContextMenuItem onClick={() => { setKbRenameTitle("Knowledge Base"); setKbRenameOpen(true); }}>
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Rename
+                </ContextMenuItem>
+                <ContextMenuItem onClick={() => {
+                  fetch("/api/system/open-data-dir", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ subpath: "" }),
+                  });
+                }}>
+                  <FolderOpen className="h-4 w-4 mr-2" />
+                  Open in Finder
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
 
             {kbExpanded && (
               <>
@@ -304,5 +351,89 @@ export function TreeView() {
         )}
       </div>
     </ScrollArea>
+
+    <Dialog open={kbSubPageOpen} onOpenChange={setKbSubPageOpen}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add Sub Page to &ldquo;Knowledge Base&rdquo;</DialogTitle>
+        </DialogHeader>
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!kbSubPageTitle.trim()) return;
+            setKbCreating(true);
+            try {
+              await createPage("", kbSubPageTitle.trim());
+              const slug = kbSubPageTitle
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "-")
+                .replace(/^-|-$/g, "");
+              loadPage(slug);
+              selectPage(slug);
+              setSection({ type: "page" });
+              setKbSubPageTitle("");
+              setKbSubPageOpen(false);
+            } catch (error) {
+              console.error("Failed to create sub page:", error);
+            } finally {
+              setKbCreating(false);
+            }
+          }}
+          className="flex gap-2"
+        >
+          <Input
+            placeholder="Page title..."
+            value={kbSubPageTitle}
+            onChange={(e) => setKbSubPageTitle(e.target.value)}
+            autoFocus
+          />
+          <Button type="submit" disabled={!kbSubPageTitle.trim() || kbCreating}>
+            {kbCreating ? "Creating..." : "Create"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={kbRenameOpen} onOpenChange={setKbRenameOpen}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Rename</DialogTitle>
+        </DialogHeader>
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!kbRenameTitle.trim()) return;
+            try {
+              const res = await fetch("/api/pages", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  content: useEditorStore.getState().content,
+                  frontmatter: { ...useEditorStore.getState().frontmatter, title: kbRenameTitle.trim() },
+                }),
+              });
+              if (res.ok) {
+                loadPage("");
+              }
+            } catch (error) {
+              console.error("Failed to rename:", error);
+            }
+            setKbRenameOpen(false);
+          }}
+          className="flex gap-2"
+        >
+          <Input
+            value={kbRenameTitle}
+            onChange={(e) => setKbRenameTitle(e.target.value)}
+            autoFocus
+          />
+          <Button type="submit" disabled={!kbRenameTitle.trim()}>
+            Rename
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
