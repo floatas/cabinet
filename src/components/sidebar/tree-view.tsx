@@ -205,23 +205,47 @@ export function TreeView() {
         {cabinetExpanded && (
           <>
             {/* ── Agents (depth 1) ─────────────────────────── */}
-            <button
-              onClick={() => {
-                setAgentsExpanded(!agentsExpanded);
-                setSection({ type: "agents" });
-              }}
-              className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-3 pt-2 pb-1 w-full text-left flex items-center gap-1.5 hover:text-foreground/80 transition-colors"
+            <div
+              className="group flex items-center gap-1.5 px-3 pt-2 pb-1 w-full"
               style={pad(1)}
             >
-              <Users className="h-3.5 w-3.5 shrink-0" />
-              Agents
-              <ChevronRight
-                className={cn(
-                  "h-3 w-3 shrink-0 text-muted-foreground/50 transition-transform duration-150 ml-auto",
-                  agentsExpanded && "rotate-90"
-                )}
-              />
-            </button>
+              <button
+                onClick={() => {
+                  setAgentsExpanded(!agentsExpanded);
+                  setSection({ type: "agents" });
+                }}
+                className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 hover:text-foreground/80 transition-colors"
+              >
+                <Users className="h-3.5 w-3.5 shrink-0" />
+                Agents
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSection({ type: "agents" });
+                  setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent("cabinet:open-add-agent"));
+                  }, 100);
+                }}
+                className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                title="Add agent"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => {
+                  setAgentsExpanded(!agentsExpanded);
+                }}
+                className="text-muted-foreground/50 hover:text-foreground/80 transition-colors"
+              >
+                <ChevronRight
+                  className={cn(
+                    "h-3 w-3 shrink-0 transition-transform duration-150",
+                    agentsExpanded && "rotate-90"
+                  )}
+                />
+              </button>
+            </div>
 
             {agentsExpanded && (
               <>

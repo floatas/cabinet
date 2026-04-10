@@ -814,6 +814,12 @@ export function AgentsWorkspace({
     }
   }, [selectedConversationId, conversations]);
 
+  useEffect(() => {
+    const handler = () => { openAddAgentDialog(); };
+    window.addEventListener("cabinet:open-add-agent", handler);
+    return () => window.removeEventListener("cabinet:open-add-agent", handler);
+  }, []);
+
   function openAgentSettings(agentSlug: string) {
     setMode("settings");
     setSettingsTarget(agentSlug);
