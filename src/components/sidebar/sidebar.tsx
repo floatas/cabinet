@@ -16,7 +16,6 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { TreeView } from "./tree-view";
 import { NewPageDialog } from "./new-page-dialog";
-import { LinkRepoDialog } from "./link-repo-dialog";
 import { useAppStore } from "@/stores/app-store";
 
 function useIsMobile() {
@@ -46,7 +45,6 @@ export function Sidebar() {
   const setCollapsed = useAppStore((s) => s.setSidebarCollapsed);
   const section = useAppStore((s) => s.section);
   const setSection = useAppStore((s) => s.setSection);
-  const [linkRepoOpen, setLinkRepoOpen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     if (typeof window === "undefined") return SIDEBAR_DEFAULT_WIDTH;
     const storedWidth = window.localStorage.getItem("cabinet-sidebar-width");
@@ -137,7 +135,6 @@ export function Sidebar() {
           </Button>
         </div>
         <TreeView />
-        <LinkRepoDialog open={linkRepoOpen} onOpenChange={setLinkRepoOpen} />
 
         <div className="p-2 flex items-center gap-1">
           <div className="flex-1">

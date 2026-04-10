@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FolderOpen, Loader2 } from "lucide-react";
+import { ChevronRight, FolderOpen, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,10 +12,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { useTreeStore } from "@/stores/tree-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { cn } from "@/lib/utils";
 
 interface LinkRepoDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  parentPath?: string;
 }
 
 function basenameForPath(value: string): string {
@@ -25,7 +27,7 @@ function basenameForPath(value: string): string {
   return parts[parts.length - 1] || "";
 }
 
-export function LinkRepoDialog({ open, onOpenChange }: LinkRepoDialogProps) {
+export function LinkRepoDialog({ open, onOpenChange, parentPath }: LinkRepoDialogProps) {
   const loadTree = useTreeStore((s) => s.loadTree);
   const selectPage = useTreeStore((s) => s.selectPage);
   const loadPage = useEditorStore((s) => s.loadPage);
@@ -37,6 +39,7 @@ export function LinkRepoDialog({ open, onOpenChange }: LinkRepoDialogProps) {
   const [browsing, setBrowsing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  const [devExpanded, setDevExpanded] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -47,6 +50,7 @@ export function LinkRepoDialog({ open, onOpenChange }: LinkRepoDialogProps) {
       setBrowsing(false);
       setCreating(false);
       setError("");
+      setDevExpanded(false);
     }
   }, [open]);
 
@@ -96,12 +100,13 @@ export function LinkRepoDialog({ open, onOpenChange }: LinkRepoDialogProps) {
           name: name.trim() || basenameForPath(localPath),
           remote: remote.trim() || undefined,
           description: description.trim() || undefined,
+          parentPath: parentPath || undefined,
         }),
       });
 
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error(data?.error || "Failed to add repo symlink.");
+        throw new Error(data?.error || "Failed to load knowledge.");
       }
 
       await loadTree();
@@ -110,7 +115,7 @@ export function LinkRepoDialog({ open, onOpenChange }: LinkRepoDialogProps) {
       onOpenChange(false);
     } catch (error) {
       setError(
-        error instanceof Error ? error.message : "Failed to add repo symlink."
+        error instanceof Error ? error.message : "Failed to load knowledge."
       );
     } finally {
       setCreating(false);
@@ -121,7 +126,7 @@ export function LinkRepoDialog({ open, onOpenChange }: LinkRepoDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add Symlinked Repo</DialogTitle>
+          <DialogTitle>Load Knowledge</DialogTitle>
         </DialogHeader>
         <form
           onSubmit={(event) => {
@@ -131,19 +136,17 @@ export function LinkRepoDialog({ open, onOpenChange }: LinkRepoDialogProps) {
           className="flex flex-col gap-3"
         >
           <p className="text-xs text-muted-foreground">
-            Cabinet will create a KB folder, a visible <code>source</code>{" "}
-            symlink to the local repo,
-            and a <code>.repo.yaml</code> file that matches the linked-repo
-            format from Getting Started.
+            Point Cabinet to any folder on your machine. Its contents will appear
+            in the Knowledge Base and be available to AI agents as context.
           </p>
 
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-muted-foreground">
-              Local Path
+              Folder
             </label>
             <div className="flex gap-2">
               <Input
-                placeholder="/Users/me/Development/my-repo"
+                placeholder="/Users/me/Documents/my-folder"
                 value={localPath}
                 onChange={(event) => setLocalPath(event.target.value)}
                 autoFocus
@@ -169,32 +172,59 @@ export function LinkRepoDialog({ open, onOpenChange }: LinkRepoDialogProps) {
               Name
             </label>
             <Input
-              placeholder={basenameForPath(localPath) || "My Repo"}
+              placeholder={basenameForPath(localPath) || "My Folder"}
               value={name}
               onChange={(event) => setName(event.target.value)}
             />
           </div>
 
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-muted-foreground">
-              Remote URL
-            </label>
-            <Input
-              placeholder="Auto-detect from git remote (optional)"
-              value={remote}
-              onChange={(event) => setRemote(event.target.value)}
-            />
-          </div>
+          {/* ── For Developers ─────────────────────────────── */}
+          <div className="border border-border rounded-md">
+            <button
+              type="button"
+              onClick={() => setDevExpanded(!devExpanded)}
+              className="flex items-center gap-1.5 w-full px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ChevronRight
+                className={cn(
+                  "h-3 w-3 shrink-0 transition-transform duration-150",
+                  devExpanded && "rotate-90"
+                )}
+              />
+              For Developers
+            </button>
+            {devExpanded && (
+              <div className="flex flex-col gap-3 px-3 pb-3">
+                <p className="text-xs text-muted-foreground">
+                  If the folder is a git repo, Cabinet auto-detects the branch
+                  and remote. A <code>.repo.yaml</code> config and
+                  a <code>source</code> symlink are created so agents can read
+                  the source code in context.
+                </p>
 
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-muted-foreground">
-              Description
-            </label>
-            <Input
-              placeholder="Optional short summary"
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-            />
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Remote URL
+                  </label>
+                  <Input
+                    placeholder="Auto-detect from git remote (optional)"
+                    value={remote}
+                    onChange={(event) => setRemote(event.target.value)}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Description
+                  </label>
+                  <Input
+                    placeholder="Optional short summary for agents"
+                    value={description}
+                    onChange={(event) => setDescription(event.target.value)}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {error ? <p className="text-xs text-destructive">{error}</p> : null}
@@ -209,7 +239,7 @@ export function LinkRepoDialog({ open, onOpenChange }: LinkRepoDialogProps) {
               Cancel
             </Button>
             <Button type="submit" disabled={!localPath.trim() || creating}>
-              {creating ? "Creating..." : "Create"}
+              {creating ? "Loading..." : "Load"}
             </Button>
           </div>
         </form>

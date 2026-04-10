@@ -57,20 +57,18 @@ We have 2 parts:
 -   **Linked Repos** — Add `.repo.yaml` to link a KB directory to a Git repo. AI agents use this to read source code in context
     
 
-## Import Your Repos
+## Load Knowledge
 
-You can import your existing repos into Cabinet.
+You can load any folder from your machine into Cabinet. Right-click any item in the sidebar and choose `Load Knowledge`.
 
-Open the Knowledge Base menu in the left sidebar and choose `Add Symlink`. Cabinet will:
+Cabinet will:
 
--   create a KB folder for the repo
+-   create a KB folder with a `source` symlink pointing to your local directory
     
--   add a `source` symlink that points to your local repo
-    
--   create a `.repo.yaml` file so agents understand the repo context
+-   if it's a git repo, also create a `.repo.yaml` file so AI agents understand the code context
     
 
-If the linked repo has an `index.html`, Cabinet will show that folder as an embedded website inside the Knowledge Base.
+If the linked folder has an `index.html`, Cabinet will show it as an embedded website inside the Knowledge Base.
 
 ## Sidebar Icons
 

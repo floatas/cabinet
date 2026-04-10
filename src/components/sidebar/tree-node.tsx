@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { LinkRepoDialog } from "./link-repo-dialog";
 
 interface TreeNodeProps {
   node: TreeNodeType;
@@ -59,6 +60,7 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
   const [creating, setCreating] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameTitle, setRenameTitle] = useState("");
+  const [linkRepoOpen, setLinkRepoOpen] = useState(false);
 
   const isSelected = selectedPath === node.path;
   const isDragOver = dragOverPath === node.path;
@@ -211,6 +213,10 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
             <FilePlus className="h-4 w-4 mr-2" />
             Add Sub Page
           </ContextMenuItem>
+          <ContextMenuItem onClick={() => setLinkRepoOpen(true)}>
+            <GitBranch className="h-4 w-4 mr-2" />
+            Load Knowledge
+          </ContextMenuItem>
           <ContextMenuItem onClick={() => { setRenameTitle(title); setRenameOpen(true); }}>
             <Pencil className="h-4 w-4 mr-2" />
             Rename
@@ -293,6 +299,8 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
           </form>
         </DialogContent>
       </Dialog>
+
+      <LinkRepoDialog open={linkRepoOpen} onOpenChange={setLinkRepoOpen} parentPath={node.path} />
     </>
   );
 }

@@ -18,16 +18,18 @@ interface LinkRepoRequest {
   name?: string;
   remote?: string;
   description?: string;
+  parentPath?: string;
 }
 
 async function detectGitMetadata(localPath: string): Promise<{
+  isRepo: boolean;
   branch?: string;
   remote?: string;
 }> {
   try {
     const git = simpleGit(localPath);
     const isRepo = await git.checkIsRepo();
-    if (!isRepo) return {};
+    if (!isRepo) return { isRepo: false };
 
     const branchSummary = await git.branchLocal();
     const remotes = await git.getRemotes(true);
@@ -35,6 +37,7 @@ async function detectGitMetadata(localPath: string): Promise<{
       remotes.find((remote) => remote.name === "origin") || remotes[0];
 
     return {
+      isRepo: true,
       branch: branchSummary.current || undefined,
       remote:
         preferredRemote?.refs.push ||
@@ -42,13 +45,14 @@ async function detectGitMetadata(localPath: string): Promise<{
         undefined,
     };
   } catch {
-    return {};
+    return { isRepo: false };
   }
 }
 
 function buildIndexContent({
   name,
   localPath,
+  isRepo,
   remote,
   branch,
   source,
@@ -56,31 +60,39 @@ function buildIndexContent({
 }: {
   name: string;
   localPath: string;
+  isRepo: boolean;
   remote?: string;
-  branch: string;
-  source: "local" | "both";
+  branch?: string;
+  source?: "local" | "both";
   description?: string;
 }) {
   const frontmatter = {
     title: name,
     created: new Date().toISOString(),
     modified: new Date().toISOString(),
-    tags: ["repo"],
+    tags: isRepo ? ["repo"] : ["knowledge"],
   };
 
-  const lines = [
+  const lines: string[] = [
     `# ${name}`,
     "",
-    description || "This KB folder links to an external code repository.",
+    description || (isRepo
+      ? "This KB folder links to an external code repository."
+      : "This KB folder links to an external directory."),
     "",
     `- Local path: \`${localPath}\``,
-    remote ? `- Remote: \`${remote}\`` : "- Remote: not detected",
-    `- Branch: \`${branch}\``,
-    `- Source: \`${source}\``,
-    "",
-    "Cabinet also created a visible `source` symlink in this folder for local access.",
-    "Edit `.repo.yaml` if you want to customize the linked repository metadata.",
   ];
+
+  if (isRepo) {
+    lines.push(remote ? `- Remote: \`${remote}\`` : "- Remote: not detected");
+    lines.push(`- Branch: \`${branch}\``);
+    lines.push(`- Source: \`${source}\``);
+    lines.push("");
+    lines.push("A `source` symlink and `.repo.yaml` were created so agents can read the source code in context.");
+  } else {
+    lines.push("");
+    lines.push("A `source` symlink was created so the folder contents are accessible from the Knowledge Base.");
+  }
 
   return matter.stringify(`\n${lines.join("\n")}\n`, frontmatter);
 }
@@ -116,7 +128,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    targetDir = resolveContentPath(folderName);
+    const parentPath = body.parentPath?.trim() || "";
+    const relativePath = parentPath ? `${parentPath}/${folderName}` : folderName;
+    targetDir = resolveContentPath(relativePath);
     if (await fileExists(targetDir)) {
       return NextResponse.json(
         { error: `A Knowledge Base folder named "${folderName}" already exists.` },
@@ -125,6 +139,7 @@ export async function POST(req: NextRequest) {
     }
 
     const detected = await detectGitMetadata(localPath);
+    const isRepo = detected.isRepo || !!body.remote?.trim();
     const branch = detected.branch || "main";
     const remote = body.remote?.trim() || detected.remote;
     const source = remote ? "both" : "local";
@@ -133,23 +148,14 @@ export async function POST(req: NextRequest) {
     await ensureDirectory(targetDir);
 
     const indexPath = path.join(targetDir, "index.md");
-    const repoYamlPath = path.join(targetDir, ".repo.yaml");
     const symlinkPath = path.join(targetDir, "source");
-
-    const repoConfig = {
-      name: derivedName,
-      local: localPath,
-      ...(remote ? { remote } : {}),
-      source,
-      branch,
-      ...(description ? { description } : {}),
-    };
 
     await writeFileContent(
       indexPath,
       buildIndexContent({
         name: derivedName,
         localPath,
+        isRepo,
         remote,
         branch,
         source,
@@ -157,10 +163,21 @@ export async function POST(req: NextRequest) {
       })
     );
 
-    await writeFileContent(
-      repoYamlPath,
-      yaml.dump(repoConfig, { lineWidth: -1, noRefs: true })
-    );
+    if (isRepo) {
+      const repoYamlPath = path.join(targetDir, ".repo.yaml");
+      const repoConfig = {
+        name: derivedName,
+        local: localPath,
+        ...(remote ? { remote } : {}),
+        source,
+        branch,
+        ...(description ? { description } : {}),
+      };
+      await writeFileContent(
+        repoYamlPath,
+        yaml.dump(repoConfig, { lineWidth: -1, noRefs: true })
+      );
+    }
 
     await fs.symlink(
       localPath,
@@ -168,11 +185,11 @@ export async function POST(req: NextRequest) {
       process.platform === "win32" ? "junction" : "dir"
     );
 
-    autoCommit(folderName, "Add");
+    autoCommit(relativePath, "Add");
 
     return NextResponse.json({
       ok: true,
-      path: folderName,
+      path: relativePath,
     });
   } catch (error) {
     if (targetDir) {
