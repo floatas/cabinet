@@ -3,7 +3,7 @@ name: Release Readiness Review
 enabled: false
 schedule: 0 15 * * 4
 provider: claude-code
-agentSlug: cto
+agentSlug: devops
 timeout: 600
 prompt: |-
   Review the release checklist, active bug list, and current roadmap priorities.

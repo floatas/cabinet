@@ -3,7 +3,7 @@ name: Weekly Reddit Learnings Digest
 enabled: false
 schedule: 0 9 * * 1
 provider: claude-code
-agentSlug: copywriter
+agentSlug: researcher
 timeout: 600
 prompt: |-
   Review subreddit notes, comment opportunities, and recent experiment ideas.

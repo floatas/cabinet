@@ -3,7 +3,7 @@ name: Subreddit Signal Scan
 enabled: false
 schedule: 0 8 * * 1-5
 provider: claude-code
-agentSlug: copywriter
+agentSlug: researcher
 timeout: 600
 prompt: |-
   Review the Reddit watchlist and summarize the clearest emotional and behavioral patterns relevant to Text Your Mom.

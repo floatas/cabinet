@@ -3,7 +3,7 @@ name: Comment Opportunity Scan
 enabled: false
 schedule: 0 11 * * 1-5
 provider: claude-code
-agentSlug: copywriter
+agentSlug: researcher
 timeout: 600
 prompt: |-
   Review the current subreddit watchlist and recent discussion themes.

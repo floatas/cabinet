@@ -1,26 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
-  Archive,
   Bot,
-  Briefcase,
+  CheckCircle2,
   Clock3,
   Crown,
   HeartPulse,
   Loader2,
+  MessageSquare,
+  XCircle,
+  Zap,
 } from "lucide-react";
+import type { ConversationMeta } from "@/types/conversations";
 import { KBEditor } from "@/components/editor/editor";
 import { HeaderActions } from "@/components/layout/header-actions";
 import { VersionHistory } from "@/components/editor/version-history";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { cronToHuman, cronToShortLabel } from "@/lib/agents/cron-utils";
-import {
-  CABINET_VISIBILITY_OPTIONS,
-  cabinetVisibilityModeLabel,
-} from "@/lib/cabinets/visibility";
+import { CABINET_VISIBILITY_OPTIONS } from "@/lib/cabinets/visibility";
 import { useEditorStore } from "@/stores/editor-store";
 import { useTreeStore } from "@/stores/tree-store";
 import { useAppStore } from "@/stores/app-store";
@@ -33,17 +33,9 @@ import type {
 
 function startCase(value: string | undefined, fallback = "General"): string {
   if (!value) return fallback;
-
-  const words = value
-    .trim()
-    .split(/[\s_-]+/)
-    .filter(Boolean);
-
+  const words = value.trim().split(/[\s_-]+/).filter(Boolean);
   if (words.length === 0) return fallback;
-
-  return words
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
+  return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
 
 function rankAgentType(type?: string): number {
@@ -54,33 +46,41 @@ function rankAgentType(type?: string): number {
 }
 
 function sortOrgAgents(a: CabinetAgentSummary, b: CabinetAgentSummary): number {
-  if (a.cabinetDepth !== b.cabinetDepth) {
-    return a.cabinetDepth - b.cabinetDepth;
-  }
+  if (a.cabinetDepth !== b.cabinetDepth) return a.cabinetDepth - b.cabinetDepth;
   const typeRank = rankAgentType(a.type) - rankAgentType(b.type);
   if (typeRank !== 0) return typeRank;
-  if ((b.active ? 1 : 0) !== (a.active ? 1 : 0)) {
-    return (b.active ? 1 : 0) - (a.active ? 1 : 0);
-  }
+  if ((b.active ? 1 : 0) !== (a.active ? 1 : 0)) return (b.active ? 1 : 0) - (a.active ? 1 : 0);
   return a.name.localeCompare(b.name);
 }
 
 function findChiefAgent(agents: CabinetAgentSummary[]): CabinetAgentSummary | null {
-  const orderedAgents = [...agents].sort(sortOrgAgents);
-  const bySlug = orderedAgents.find((agent) => agent.slug.toLowerCase() === "ceo");
-  if (bySlug) return bySlug;
-
-  const byName = orderedAgents.find((agent) => agent.name.trim().toLowerCase() === "ceo");
-  if (byName) return byName;
-
-  const byRole = orderedAgents.find((agent) =>
-    agent.role.toLowerCase().includes("chief executive")
+  const ordered = [...agents].sort(sortOrgAgents);
+  return (
+    ordered.find((a) => a.slug.toLowerCase() === "ceo") ||
+    ordered.find((a) => a.name.trim().toLowerCase() === "ceo") ||
+    ordered.find((a) => a.role.toLowerCase().includes("chief executive")) ||
+    ordered.find((a) => a.type === "lead") ||
+    null
   );
-  if (byRole) return byRole;
-
-  return orderedAgents.find((agent) => agent.type === "lead") || null;
 }
 
+/* ─── Stat Pill ─── */
+function StatPill({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium",
+        highlight
+          ? "bg-primary/10 text-primary"
+          : "bg-muted text-muted-foreground"
+      )}
+    >
+      {value} {label}
+    </span>
+  );
+}
+
+/* ─── Org Chart ─── */
 function CompactOrgChart({
   cabinetName,
   agents,
@@ -91,7 +91,7 @@ function CompactOrgChart({
   onAgentClick?: (agent: CabinetAgentSummary) => void;
 }) {
   const chiefAgent = findChiefAgent(agents);
-  const orgRoot = chiefAgent || {
+  const orgRoot: CabinetAgentSummary = chiefAgent || {
     scopedId: "__cabinet_ceo__",
     name: "CEO",
     slug: "__cabinet_ceo__",
@@ -109,159 +109,129 @@ function CompactOrgChart({
     cabinetDepth: 0,
     inherited: false,
   };
-  const orgAgents = agents
-    .filter((agent) => agent.slug !== orgRoot.slug)
-    .sort(sortOrgAgents);
-  const groupedOrgAgents = Object.entries(
+
+  const orgAgents = agents.filter((a) => a.slug !== orgRoot.slug).sort(sortOrgAgents);
+  const grouped = Object.entries(
     orgAgents.reduce<Record<string, CabinetAgentSummary[]>>((acc, agent) => {
-      const department = agent.department || "general";
-      if (!acc[department]) {
-        acc[department] = [];
-      }
-      acc[department].push(agent);
+      const dept = agent.department || "general";
+      if (!acc[dept]) acc[dept] = [];
+      acc[dept].push(agent);
       return acc;
     }, {})
   )
-    .sort(([left], [right]) => {
-      if (left === "general") return 1;
-      if (right === "general") return -1;
-      return startCase(left).localeCompare(startCase(right));
+    .sort(([l], [r]) => {
+      if (l === "general") return 1;
+      if (r === "general") return -1;
+      return startCase(l).localeCompare(startCase(r));
     })
-    .map(([department, departmentAgents]) => ({
-      department,
-      label: startCase(department),
-      agents: departmentAgents.sort(sortOrgAgents),
+    .map(([dept, deptAgents]) => ({
+      dept,
+      label: startCase(dept),
+      agents: deptAgents.sort(sortOrgAgents),
     }));
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] border bg-card">
-      <div className="border-b px-5 py-4">
-        <div className="flex items-center gap-2">
-          <Briefcase className="h-4 w-4 text-primary" />
-          <div>
-            <h2 className="text-sm font-semibold">Cabinet Org Chart</h2>
-            <p className="text-xs text-muted-foreground">
-              {cabinetName} agents grouped by department
-            </p>
-          </div>
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      {/* Section header */}
+      <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
+        <Crown className="h-4 w-4 text-muted-foreground" />
+        <div>
+          <p className="text-sm font-semibold">Org Chart</p>
+          <p className="text-xs text-muted-foreground">{cabinetName}</p>
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="flex flex-col gap-4 p-4">
+      <ScrollArea className="max-h-[460px]">
+        <div className="p-3 space-y-3">
+
+          {/* CEO card */}
           <div
-            className={cn("rounded-[24px] bg-primary/[0.08] p-4", onAgentClick && "cursor-pointer hover:bg-primary/[0.12] transition-colors")}
+            className={cn(
+              "rounded-lg border border-border bg-muted/40 p-3.5",
+              onAgentClick && "cursor-pointer hover:bg-muted/70 transition-colors"
+            )}
             onClick={() => onAgentClick?.(orgRoot)}
           >
             <div className="flex items-start gap-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-background text-[26px]">
-                {orgRoot.emoji || "👑"}
-              </div>
+              <span className="text-2xl leading-none pt-0.5">{orgRoot.emoji || "👑"}</span>
               <div className="min-w-0 flex-1">
-                <div className="inline-flex items-center gap-1.5 rounded-full bg-background px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-primary">
-                  <Crown className="h-3 w-3" />
-                  CEO
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold truncate">{orgRoot.name}</p>
+                  <span className="shrink-0 rounded-full bg-background border border-border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                    <Crown className="h-2.5 w-2.5" /> CEO
+                  </span>
+                  <span
+                    className={cn(
+                      "ml-auto h-2 w-2 shrink-0 rounded-full",
+                      orgRoot.active ? "bg-emerald-500" : "bg-muted-foreground/30"
+                    )}
+                  />
                 </div>
-                <h3 className="mt-2 text-lg font-semibold tracking-[-0.03em]">
-                  {orgRoot.name}
-                </h3>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  {orgRoot.role}
-                </p>
-                {orgRoot.inherited ? (
+                <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{orgRoot.role}</p>
+                {orgRoot.heartbeat && (
                   <div className="mt-2">
-                    <span className="rounded-full bg-background px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                      {orgRoot.cabinetName}
+                    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                      <Zap className="h-2.5 w-2.5" />
+                      {cronToShortLabel(orgRoot.heartbeat)}
                     </span>
                   </div>
-                ) : null}
-              </div>
-              <span
-                className={cn(
-                  "mt-1 inline-flex h-2.5 w-2.5 rounded-full",
-                  orgRoot.active ? "bg-emerald-500" : "bg-muted-foreground/30"
                 )}
-                title={orgRoot.active ? "Active" : "Paused"}
-              />
+              </div>
             </div>
           </div>
 
-          {groupedOrgAgents.length > 0 ? (
-            groupedOrgAgents.map((group) => (
-              <section
-                key={group.department}
-                className="rounded-[24px] border border-border/70 bg-background/70 p-4"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h4 className="text-sm font-semibold">{group.label}</h4>
-                    <p className="text-xs text-muted-foreground">
-                      {group.agents.length} {group.agents.length === 1 ? "agent" : "agents"}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-3 space-y-2.5">
+          {/* Department groups */}
+          {grouped.length > 0 ? (
+            grouped.map((group) => (
+              <div key={group.dept}>
+                <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/60">
+                  {group.label}
+                </p>
+                <div className="space-y-1.5">
                   {group.agents.map((agent) => (
                     <div
                       key={agent.scopedId}
-                      className={cn("rounded-2xl border border-border/60 bg-card px-3 py-3", onAgentClick && "cursor-pointer hover:border-primary/30 transition-colors")}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg border border-border/60 bg-background/60 px-3 py-2.5",
+                        onAgentClick && "cursor-pointer hover:border-border hover:bg-card transition-colors"
+                      )}
                       onClick={() => onAgentClick?.(agent)}
                     >
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-muted/60 text-[22px]">
-                          {agent.emoji || "🤖"}
+                      <span className="text-xl leading-none shrink-0">{agent.emoji || "🤖"}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-sm font-medium">{agent.name}</p>
+                          <span
+                            className={cn(
+                              "ml-auto h-1.5 w-1.5 shrink-0 rounded-full",
+                              agent.active ? "bg-emerald-500" : "bg-muted-foreground/25"
+                            )}
+                          />
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="truncate text-sm font-semibold">{agent.name}</p>
-                            <span
-                              className={cn(
-                                "inline-flex h-2.5 w-2.5 rounded-full",
-                                agent.active ? "bg-emerald-500" : "bg-muted-foreground/30"
-                              )}
-                              title={agent.active ? "Active" : "Paused"}
-                            />
-                          </div>
-                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                            {agent.role}
-                          </p>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                              {startCase(agent.type, "Specialist")}
-                            </span>
-                            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                              {agent.jobCount} {agent.jobCount === 1 ? "job" : "jobs"}
-                            </span>
-                            {agent.inherited ? (
-                              <span className="rounded-full bg-background px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                {agent.cabinetName}
-                              </span>
-                            ) : null}
-                            {agent.heartbeat ? (
-                              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                                {cronToShortLabel(agent.heartbeat)}
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
+                        <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{agent.role}</p>
                       </div>
+                      {agent.heartbeat && (
+                        <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                          {cronToShortLabel(agent.heartbeat)}
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
-              </section>
+              </div>
             ))
           ) : (
-            <div className="rounded-[24px] border border-dashed border-border bg-background/70 px-4 py-6 text-center text-sm text-muted-foreground">
-              Add more agents to start mapping this cabinet’s team.
-            </div>
+            <p className="px-1 py-2 text-center text-xs text-muted-foreground">
+              Add more agents to build this cabinet&apos;s team.
+            </p>
           )}
         </div>
       </ScrollArea>
-    </section>
+    </div>
   );
 }
 
+/* ─── Schedules Panel ─── */
 function SchedulesPanel({
   cabinetPath,
   agents,
@@ -272,140 +242,452 @@ function SchedulesPanel({
   jobs: CabinetJobSummary[];
 }) {
   const agentNameBySlug = useMemo(
-    () =>
-      new Map(
-        agents.map((agent) => [agent.scopedId, agent.name])
-      ),
+    () => new Map(agents.map((a) => [a.scopedId, a.name])),
     [agents]
   );
   const heartbeatAgents = agents
-    .filter((agent) => agent.heartbeat)
-    .sort((left, right) => left.name.localeCompare(right.name));
+    .filter((a) => a.heartbeat)
+    .sort((l, r) => l.name.localeCompare(r.name));
   const jobsWithOwners = jobs.map((job) => ({
     ...job,
     ownerName: job.ownerScopedId
       ? agentNameBySlug.get(job.ownerScopedId) || job.ownerAgent || null
       : job.ownerAgent || null,
   }));
-  const includesDescendants = jobs.some((job) => job.inherited) || heartbeatAgents.some((agent) => agent.inherited);
 
   return (
-    <section className="flex min-h-[320px] flex-col overflow-hidden rounded-[28px] border bg-card">
-      <div className="border-b px-5 py-4">
-        <div className="flex items-center gap-2">
-          <Clock3 className="h-4 w-4 text-primary" />
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      {/* Jobs */}
+      <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
+        <Clock3 className="h-4 w-4 text-muted-foreground" />
+        <div>
+          <p className="text-sm font-semibold">Jobs</p>
+          <p className="text-xs text-muted-foreground">
+            {jobsWithOwners.length} scheduled {jobsWithOwners.length === 1 ? "job" : "jobs"}
+          </p>
+        </div>
+      </div>
+
+      <div className="divide-y divide-border/50">
+        {jobsWithOwners.length > 0 ? (
+          jobsWithOwners.map((job) => (
+            <div key={job.scopedId} className="flex items-start gap-3 px-4 py-3">
+              <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted">
+                <Clock3 className="h-3.5 w-3.5 text-muted-foreground" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{job.name}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {job.ownerName ? `${job.ownerName} · ` : ""}
+                  {cronToHuman(job.schedule)}
+                </p>
+              </div>
+              <span
+                className={cn(
+                  "shrink-0 mt-0.5 rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+                  job.enabled
+                    ? "bg-emerald-500/12 text-emerald-500"
+                    : "bg-muted text-muted-foreground"
+                )}
+              >
+                {job.enabled ? "On" : "Off"}
+              </span>
+            </div>
+          ))
+        ) : (
+          <p className="px-4 py-4 text-xs text-muted-foreground">No cabinet jobs configured yet.</p>
+        )}
+      </div>
+
+      {/* Heartbeats */}
+      <div className="flex items-center gap-2.5 border-b border-t border-border px-4 py-3">
+        <HeartPulse className="h-4 w-4 text-muted-foreground" />
+        <div>
+          <p className="text-sm font-semibold">Heartbeats</p>
+          <p className="text-xs text-muted-foreground">
+            {heartbeatAgents.length} {heartbeatAgents.length === 1 ? "agent" : "agents"} on a rhythm
+          </p>
+        </div>
+      </div>
+
+      <div className="divide-y divide-border/50">
+        {heartbeatAgents.length > 0 ? (
+          heartbeatAgents.map((agent) => (
+            <div key={agent.scopedId} className="flex items-center gap-3 px-4 py-3">
+              <span className="text-lg leading-none shrink-0">{agent.emoji || "🤖"}</span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{agent.name}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {cronToHuman(agent.heartbeat || "")}
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-medium text-primary">
+                {cronToShortLabel(agent.heartbeat || "")}
+              </span>
+            </div>
+          ))
+        ) : (
+          <p className="px-4 py-4 text-xs text-muted-foreground">No heartbeats configured yet.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Conversations helpers ─── */
+
+function formatRelative(iso: string): string {
+  const delta = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(delta / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+const TRIGGER_STYLES: Record<ConversationMeta["trigger"], string> = {
+  manual: "bg-sky-500/12 text-sky-400 ring-1 ring-sky-500/20",
+  job: "bg-emerald-500/12 text-emerald-400 ring-1 ring-emerald-500/20",
+  heartbeat: "bg-pink-500/12 text-pink-400 ring-1 ring-pink-500/20",
+};
+
+const TRIGGER_LABELS: Record<ConversationMeta["trigger"], string> = {
+  manual: "Manual",
+  job: "Job",
+  heartbeat: "Heartbeat",
+};
+
+function TriggerIcon({ trigger }: { trigger: ConversationMeta["trigger"] }) {
+  if (trigger === "job") return <Clock3 className="h-2.5 w-2.5" />;
+  if (trigger === "heartbeat") return <HeartPulse className="h-2.5 w-2.5" />;
+  return <Bot className="h-2.5 w-2.5" />;
+}
+
+function StatusIcon({ status }: { status: ConversationMeta["status"] }) {
+  if (status === "running") return <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />;
+  if (status === "completed") return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />;
+  if (status === "failed") return <XCircle className="h-3.5 w-3.5 text-destructive" />;
+  return <XCircle className="h-3.5 w-3.5 text-muted-foreground/40" />;
+}
+
+/* ─── Task Composer ─── */
+function CabinetTaskComposer({
+  cabinetPath,
+  agents,
+  cabinetName,
+  onNavigate,
+}: {
+  cabinetPath: string;
+  agents: CabinetAgentSummary[];
+  cabinetName: string;
+  onNavigate: (agentSlug: string, agentCabinetPath: string, conversationId: string) => void;
+}) {
+  const [selectedAgent, setSelectedAgent] = useState<CabinetAgentSummary | null>(null);
+  const [prompt, setPrompt] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-select first active own-cabinet agent on load
+  useEffect(() => {
+    if (agents.length > 0 && !selectedAgent) {
+      const first =
+        agents.find((a) => a.cabinetDepth === 0 && a.active) ||
+        agents.find((a) => a.active) ||
+        agents[0];
+      setSelectedAgent(first);
+    }
+  }, [agents, selectedAgent]);
+
+  // Auto-grow textarea
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [prompt]);
+
+  const activeAgents = agents.filter((a) => a.active);
+  const ownAgents = activeAgents.filter((a) => a.cabinetDepth === 0);
+  const childAgentGroups = activeAgents
+    .filter((a) => a.cabinetDepth > 0)
+    .reduce<Record<string, CabinetAgentSummary[]>>((acc, agent) => {
+      const key = agent.cabinetName || agent.cabinetPath;
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(agent);
+      return acc;
+    }, {});
+
+  async function submit(text: string) {
+    if (!text.trim() || submitting || !selectedAgent) return;
+    setSubmitting(true);
+    try {
+      const agentCabinetPath = selectedAgent.cabinetPath || cabinetPath;
+      const res = await fetch("/api/agents/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agentSlug: selectedAgent.slug,
+          userMessage: text.trim(),
+          mentionedPaths: [],
+          cabinetPath: agentCabinetPath,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPrompt("");
+        onNavigate(selectedAgent.slug, agentCabinetPath, data.conversation?.id);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const placeholder = selectedAgent
+    ? `What should ${selectedAgent.name} work on?`
+    : "Select an agent above…";
+
+  return (
+    <div className="rounded-xl border border-border bg-card px-5 py-5">
+      {/* Heading */}
+      <p className="mb-4 text-sm font-semibold text-foreground">
+        What are we working on in{" "}
+        <span className="text-muted-foreground font-normal">{cabinetName}</span>?
+      </p>
+
+      {/* Agent selector */}
+      <div className="mb-4 flex flex-col gap-2">
+        {/* Own cabinet agents */}
+        {ownAgents.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {ownAgents.map((agent) => (
+              <button
+                key={agent.scopedId}
+                onClick={() => {
+                  setSelectedAgent(agent);
+                  textareaRef.current?.focus();
+                }}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-all",
+                  selectedAgent?.scopedId === agent.scopedId
+                    ? "border-primary bg-primary text-primary-foreground font-medium shadow-sm"
+                    : "border-border bg-background text-foreground hover:border-border/80 hover:bg-muted/50"
+                )}
+              >
+                <span className="text-base leading-none">{agent.emoji}</span>
+                {agent.name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Child cabinet agents grouped by cabinet */}
+        {Object.entries(childAgentGroups).map(([groupName, groupAgents]) => (
+          <div key={groupName} className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/60 pr-1">
+              {groupName}
+            </span>
+            {groupAgents.map((agent) => (
+              <button
+                key={agent.scopedId}
+                onClick={() => {
+                  setSelectedAgent(agent);
+                  textareaRef.current?.focus();
+                }}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-all",
+                  selectedAgent?.scopedId === agent.scopedId
+                    ? "border-primary bg-primary text-primary-foreground font-medium shadow-sm"
+                    : "border-border bg-background text-foreground hover:border-border/80 hover:bg-muted/50"
+                )}
+              >
+                <span className="text-base leading-none">{agent.emoji}</span>
+                {agent.name}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {/* Textarea + send */}
+      <div className="relative">
+        <textarea
+          ref={textareaRef}
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+              e.preventDefault();
+              void submit(prompt);
+            } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              setPrompt((p) => p + "\n");
+            }
+          }}
+          placeholder={placeholder}
+          disabled={submitting || !selectedAgent}
+          rows={1}
+          className={cn(
+            "w-full resize-none rounded-lg border border-border bg-background px-4 py-3 pr-12",
+            "text-sm text-foreground placeholder:text-muted-foreground",
+            "focus:outline-none focus:ring-2 focus:ring-ring",
+            "shadow-sm transition-shadow",
+            (!selectedAgent || submitting) && "opacity-60"
+          )}
+        />
+        <button
+          onClick={() => void submit(prompt)}
+          disabled={!prompt.trim() || submitting || !selectedAgent}
+          className={cn(
+            "absolute right-2 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-md transition-colors",
+            prompt.trim() && !submitting && selectedAgent
+              ? "bg-primary text-primary-foreground hover:bg-primary/90"
+              : "bg-muted text-muted-foreground"
+          )}
+        >
+          {submitting ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Zap className="h-3.5 w-3.5" />
+          )}
+        </button>
+      </div>
+
+      <p className="mt-2 text-[10px] text-muted-foreground/60">
+        Enter to send · ⌘↵ new line
+      </p>
+    </div>
+  );
+}
+
+/* ─── Recent Conversations ─── */
+function RecentConversations({
+  cabinetPath,
+  visibilityMode,
+  agents,
+  onOpen,
+}: {
+  cabinetPath: string;
+  visibilityMode: string;
+  agents: { slug: string; emoji: string; name: string; cabinetPath?: string }[];
+  onOpen: (conv: ConversationMeta) => void;
+}) {
+  const [conversations, setConversations] = useState<ConversationMeta[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const agentBySlug = useMemo(() => {
+    const map = new Map<string, { emoji: string; name: string }>();
+    for (const a of agents) map.set(a.slug, { emoji: a.emoji, name: a.name });
+    return map;
+  }, [agents]);
+
+  const refresh = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({ cabinetPath, limit: "20" });
+      if (visibilityMode !== "own") params.set("visibilityMode", visibilityMode);
+      const res = await fetch(`/api/agents/conversations?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setConversations((data.conversations || []) as ConversationMeta[]);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  }, [cabinetPath, visibilityMode]);
+
+  useEffect(() => {
+    void refresh();
+    const iv = setInterval(() => void refresh(), 6000);
+    return () => clearInterval(iv);
+  }, [refresh]);
+
+  const hasRunning = conversations.some((c) => c.status === "running");
+
+  return (
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div className="flex items-center gap-2.5">
+          <MessageSquare className="h-4 w-4 text-muted-foreground" />
           <div>
-            <h2 className="text-sm font-semibold">Schedules</h2>
+            <p className="text-sm font-semibold">Recent Conversations</p>
             <p className="text-xs text-muted-foreground">
-              {includesDescendants
-                ? "Jobs and heartbeat rhythms across the visible cabinet tree"
-                : "Jobs and heartbeat rhythms for this cabinet"}
+              {loading ? "Loading…" : `${conversations.length} conversations`}
+              {hasRunning && (
+                <span className="ml-2 inline-flex items-center gap-1 text-primary">
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse inline-block" />
+                  {conversations.filter((c) => c.status === "running").length} running
+                </span>
+              )}
             </p>
           </div>
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="space-y-5 p-4">
-          <div>
-            <div className="mb-2 flex items-center gap-2">
-              <Clock3 className="h-3.5 w-3.5 text-muted-foreground" />
-              <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                Jobs
-              </h3>
-            </div>
-
-            <div className="space-y-2">
-              {jobsWithOwners.length > 0 ? (
-                jobsWithOwners.map((job) => (
-                  <div
-                    key={job.scopedId}
-                    className="rounded-2xl border border-border/60 bg-background/70 px-3 py-3"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold">{job.name}</p>
-                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                          {job.ownerName ? `${job.ownerName} · ` : ""}
-                          {cronToHuman(job.schedule)}
-                        </p>
-                        {job.cabinetPath !== cabinetPath ? (
-                          <div className="mt-2">
-                            <span className="rounded-full bg-background px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                              {job.cabinetName}
-                            </span>
-                          </div>
-                        ) : null}
-                      </div>
-                      <span
-                        className={cn(
-                          "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em]",
-                          job.enabled
-                            ? "bg-primary/10 text-primary"
-                            : "bg-muted text-muted-foreground"
-                        )}
-                      >
-                        {job.enabled ? "Enabled" : "Paused"}
-                      </span>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="rounded-2xl border border-dashed border-border bg-background/70 px-3 py-4 text-sm text-muted-foreground">
-                  No cabinet jobs yet.
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-2 flex items-center gap-2">
-              <HeartPulse className="h-3.5 w-3.5 text-muted-foreground" />
-              <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                Heartbeats
-              </h3>
-            </div>
-
-            <div className="space-y-2">
-              {heartbeatAgents.length > 0 ? (
-                heartbeatAgents.map((agent) => (
-                  <div
-                    key={agent.scopedId}
-                    className="rounded-2xl border border-border/60 bg-background/70 px-3 py-3"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-muted/60 text-lg">
-                        {agent.emoji || "🤖"}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold">{agent.name}</p>
-                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                          {cronToHuman(agent.heartbeat || "")}
-                        </p>
-                        {agent.cabinetPath !== cabinetPath ? (
-                          <div className="mt-2">
-                            <span className="rounded-full bg-background px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                              {agent.cabinetName}
-                            </span>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="rounded-2xl border border-dashed border-border bg-background/70 px-3 py-4 text-sm text-muted-foreground">
-                  No heartbeats configured yet.
-                </div>
-              )}
-            </div>
-          </div>
+      {loading ? (
+        <div className="flex items-center gap-2 px-4 py-4 text-xs text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading conversations…
         </div>
-      </ScrollArea>
-    </section>
+      ) : conversations.length === 0 ? (
+        <p className="px-4 py-4 text-xs text-muted-foreground">
+          No conversations yet. Run a heartbeat or send a task to an agent.
+        </p>
+      ) : (
+        <div className="divide-y divide-border/50">
+          {conversations.map((conv) => {
+            const agent = agentBySlug.get(conv.agentSlug);
+            return (
+              <button
+                key={conv.id}
+                onClick={() => onOpen(conv)}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/40 transition-colors"
+              >
+                {/* Status */}
+                <StatusIcon status={conv.status} />
+
+                {/* Agent */}
+                <span className="shrink-0 text-base leading-none" title={agent?.name || conv.agentSlug}>
+                  {agent?.emoji || "🤖"}
+                </span>
+
+                {/* Title + meta */}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium leading-snug">{conv.title}</p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {agent?.name || conv.agentSlug}
+                    {conv.summary ? ` · ${conv.summary}` : ""}
+                  </p>
+                </div>
+
+                {/* Trigger pill */}
+                <span
+                  className={cn(
+                    "shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
+                    TRIGGER_STYLES[conv.trigger]
+                  )}
+                  title={TRIGGER_LABELS[conv.trigger]}
+                >
+                  <TriggerIcon trigger={conv.trigger} />
+                  {TRIGGER_LABELS[conv.trigger]}
+                </span>
+
+                {/* Time */}
+                <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+                  {formatRelative(conv.startedAt)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
+/* ─── Main View ─── */
 export function CabinetView({ cabinetPath }: { cabinetPath: string }) {
   const [overview, setOverview] = useState<CabinetOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -428,24 +710,17 @@ export function CabinetView({ cabinetPath }: { cabinetPath: string }) {
   const loadOverview = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        path: cabinetPath,
-        visibility: cabinetVisibilityMode,
-      });
-      const response = await fetch(`/api/cabinets/overview?${params.toString()}`, {
-        cache: "no-store",
-      });
-
+      const params = new URLSearchParams({ path: cabinetPath, visibility: cabinetVisibilityMode });
+      const response = await fetch(`/api/cabinets/overview?${params.toString()}`, { cache: "no-store" });
       if (!response.ok) {
         const data = (await response.json().catch(() => null)) as { error?: string } | null;
         throw new Error(data?.error || "Failed to load cabinet overview");
       }
-
       const data = (await response.json()) as CabinetOverview;
       setOverview(data);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load cabinet overview");
+      setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
       setLoading(false);
     }
@@ -453,19 +728,12 @@ export function CabinetView({ cabinetPath }: { cabinetPath: string }) {
 
   useEffect(() => {
     void loadOverview();
-
-    const interval = window.setInterval(() => {
-      void loadOverview();
-    }, 15000);
-    const handleFocus = () => {
-      void loadOverview();
-    };
-
-    window.addEventListener("focus", handleFocus);
-
+    const interval = window.setInterval(() => void loadOverview(), 15000);
+    const onFocus = () => void loadOverview();
+    window.addEventListener("focus", onFocus);
     return () => {
       window.clearInterval(interval);
-      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("focus", onFocus);
     };
   }, [loadOverview]);
 
@@ -474,15 +742,14 @@ export function CabinetView({ cabinetPath }: { cabinetPath: string }) {
     cabinetPath.split("/").filter(Boolean).pop()?.replace(/-/g, " ") ||
     "Cabinet";
   const cabinetDescription =
-    overview?.cabinet.description || "Portable software layer for agents, jobs, and knowledge.";
-  const activeAgents = overview?.agents.filter((agent) => agent.active).length || 0;
-  const heartbeatCount =
-    overview?.agents.filter((agent) => Boolean(agent.heartbeat)).length || 0;
-  const directChildCabinetCount = overview?.children.length || 0;
-  const visibleCabinetCount = overview?.visibleCabinets.length || 1;
+    overview?.cabinet.description ||
+    "Portable software layer for agents, jobs, and knowledge.";
+  const activeAgents = overview?.agents.filter((a) => a.active).length ?? 0;
+  const heartbeatCount = overview?.agents.filter((a) => Boolean(a.heartbeat)).length ?? 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      {/* Toolbar */}
       <div className="border-b border-border/70 bg-background/95 px-4 py-3 sm:px-6">
         <div className="flex items-center justify-end gap-1">
           <VersionHistory />
@@ -491,90 +758,45 @@ export function CabinetView({ cabinetPath }: { cabinetPath: string }) {
       </div>
 
       <ScrollArea className="flex-1 min-h-0">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-4 sm:px-6 lg:px-8">
-          <section className="overflow-hidden rounded-[32px] border bg-card shadow-sm">
-            <div className="relative h-28 overflow-hidden bg-gradient-to-r from-primary/25 via-primary/12 to-background">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.18),transparent_44%)]" />
-              <div className="absolute inset-0 bg-[linear-gradient(135deg,transparent_0%,hsl(var(--primary)/0.07)_100%)]" />
-            </div>
+        <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 space-y-6">
 
-            <div className="relative px-5 pb-6 pt-5 sm:px-6">
-              {overview?.parent ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => openCabinet(overview.parent!.path)}
-                  className="mb-4 gap-2 rounded-full px-3"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  Back to {overview.parent.name}
-                </Button>
-              ) : null}
+          {/* ── Page Header ── */}
+          <div className="space-y-4">
+            {overview?.parent && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => openCabinet(overview.parent!.path)}
+                className="-ml-2 h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Back
+              </Button>
+            )}
 
-              <div className="-mt-14 flex items-start justify-between gap-4">
-                <div className="flex min-w-0 items-start gap-4">
-                  <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[22px] border border-border/60 bg-background text-primary shadow-sm">
-                    <Archive className="h-7 w-7" />
-                  </div>
-
-                  <div className="min-w-0 pt-4">
-                    <div className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
-                      {overview?.cabinet.kind || "Cabinet"}
-                    </div>
-                    <h1 className="mt-3 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
-                      {cabinetName}
-                    </h1>
-                    <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-                      {cabinetDescription}
-                    </p>
-                  </div>
-                </div>
+            <div className="flex items-start justify-between gap-6">
+              <div className="space-y-1 min-w-0">
+                <h1 className="text-2xl font-semibold tracking-tight">{cabinetName}</h1>
+                <p className="text-sm text-muted-foreground leading-relaxed max-w-xl">
+                  {cabinetDescription}
+                </p>
               </div>
 
-              <div className="mt-5 flex flex-wrap gap-2">
-                <div className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-                  {overview?.agents.length || 0} agents
-                </div>
-                <div className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-                  {activeAgents} active
-                </div>
-                <div className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-                  {overview?.jobs.length || 0} jobs
-                </div>
-                <div className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-                  {heartbeatCount} heartbeats
-                </div>
-                <div className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-                  {directChildCabinetCount} {directChildCabinetCount === 1 ? "child cabinet" : "child cabinets"}
-                </div>
-                <div className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-                  {visibleCabinetCount} {visibleCabinetCount === 1 ? "visible cabinet" : "visible cabinets"}
-                </div>
-                <div className="rounded-full bg-muted px-3 py-1 font-mono text-[11px] text-muted-foreground">
-                  /{cabinetPath}
-                </div>
-              </div>
-
-              <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                    Visible Agent Scope
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {cabinetVisibilityModeLabel(cabinetVisibilityMode)}
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
+              {/* Visibility scope */}
+              <div className="shrink-0 flex flex-col items-end gap-1.5">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  Scope
+                </p>
+                <div className="flex items-center rounded-lg border border-border bg-muted/50 p-0.5 gap-0.5">
                   {CABINET_VISIBILITY_OPTIONS.map((option) => (
                     <button
                       key={option.value}
                       onClick={() => setCabinetVisibilityMode(option.value)}
                       className={cn(
-                        "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                        "rounded-md px-3 py-1.5 text-xs font-medium transition-all",
                         cabinetVisibilityMode === option.value
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border bg-background text-muted-foreground hover:text-foreground"
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
                       )}
                     >
                       {option.shortLabel}
@@ -583,34 +805,70 @@ export function CabinetView({ cabinetPath }: { cabinetPath: string }) {
                 </div>
               </div>
             </div>
-          </section>
 
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-            <section className="flex min-h-[720px] min-w-0 flex-col overflow-hidden rounded-[28px] border bg-card">
-              <div className="border-b px-5 py-4">
-                <div className="flex items-center gap-2">
-                  <Bot className="h-4 w-4 text-primary" />
-                  <div>
-                    <h2 className="text-sm font-semibold">Cabinet Notes</h2>
-                    <p className="text-xs text-muted-foreground">
-                      Showing this cabinet&apos;s index page for now
-                    </p>
-                  </div>
+            {/* Stats pills */}
+            <div className="flex flex-wrap items-center gap-2">
+              <StatPill value={overview?.agents.length ?? 0} label="agents" />
+              <StatPill value={activeAgents} label="active" highlight />
+              <StatPill value={overview?.jobs.length ?? 0} label="jobs" />
+              <StatPill value={heartbeatCount} label="heartbeats" />
+              <span className="rounded-full bg-muted px-3 py-1 font-mono text-[11px] text-muted-foreground">
+                /{cabinetPath}
+              </span>
+            </div>
+          </div>
+
+          {/* ── Task Composer ── */}
+          {overview && (
+            <CabinetTaskComposer
+              cabinetPath={cabinetPath}
+              agents={overview.agents}
+              cabinetName={cabinetName}
+              onNavigate={(slug, agentCabinetPath, conversationId) =>
+                setSection({ type: "agent", slug, cabinetPath: agentCabinetPath, conversationId })
+              }
+            />
+          )}
+
+          {/* ── Recent Conversations ── */}
+          <RecentConversations
+            cabinetPath={cabinetPath}
+            visibilityMode={cabinetVisibilityMode}
+            agents={overview?.agents ?? []}
+            onOpen={(conv) =>
+              setSection({
+                type: "agent",
+                slug: conv.agentSlug,
+                cabinetPath: conv.cabinetPath || cabinetPath,
+                conversationId: conv.id,
+              })
+            }
+          />
+
+          {/* ── Main Grid ── */}
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+
+            {/* Notes / Editor */}
+            <div className="flex min-h-[680px] flex-col overflow-hidden rounded-xl border border-border bg-card">
+              <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
+                <Bot className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-semibold">Cabinet Notes</p>
+                  <p className="text-xs text-muted-foreground">Index page for this cabinet</p>
                 </div>
               </div>
               <KBEditor />
-            </section>
+            </div>
 
-            <div className="flex min-h-[720px] flex-col gap-4">
+            {/* Right sidebar */}
+            <div className="flex flex-col gap-4">
               {loading && !overview ? (
-                <div className="flex min-h-[320px] items-center justify-center rounded-[28px] border bg-card text-sm text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Loading cabinet overview...
-                  </div>
+                <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card py-16 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading overview…
                 </div>
               ) : error && !overview ? (
-                <div className="rounded-[28px] border border-destructive/30 bg-card px-5 py-4 text-sm text-destructive">
+                <div className="rounded-xl border border-destructive/20 bg-card px-4 py-3 text-sm text-destructive">
                   {error}
                 </div>
               ) : overview ? (
@@ -635,6 +893,7 @@ export function CabinetView({ cabinetPath }: { cabinetPath: string }) {
               ) : null}
             </div>
           </div>
+
         </div>
       </ScrollArea>
     </div>

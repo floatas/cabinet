@@ -3,7 +3,7 @@ name: Daily Bug Triage
 enabled: false
 schedule: 0 10 * * 1-5
 provider: claude-code
-agentSlug: cto
+agentSlug: devops
 timeout: 600
 prompt: |-
   Review bug-triage.csv and identify the highest-risk issues for the Text Your Mom app.

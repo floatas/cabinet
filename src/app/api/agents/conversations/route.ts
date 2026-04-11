@@ -80,6 +80,10 @@ export async function POST(req: NextRequest) {
       typeof body.pagePath === "string" && body.pagePath.trim()
         ? body.pagePath.trim()
         : undefined;
+    const cabinetPath =
+      typeof body.cabinetPath === "string" && body.cabinetPath.trim()
+        ? body.cabinetPath.trim()
+        : undefined;
 
     if (!userMessage) {
       return NextResponse.json(
@@ -106,6 +110,7 @@ export async function POST(req: NextRequest) {
             agentSlug,
             userMessage,
             mentionedPaths,
+            cabinetPath,
           });
 
     const conversation = await startConversationRun({
@@ -119,6 +124,7 @@ export async function POST(req: NextRequest) {
           ? conversationInput.mentionedPaths
           : mentionedPaths,
       cwd: conversationInput.cwd,
+      cabinetPath: "cabinetPath" in conversationInput ? conversationInput.cabinetPath : cabinetPath,
       onComplete: async (completion) => {
         if (agentSlug === "general" || !completion.meta.contextSummary) return;
         const timestamp = new Date().toISOString();

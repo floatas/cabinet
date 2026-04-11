@@ -1,18 +1,11 @@
 ---
 name: Trend Scout
-slug: trend-scout
-emoji: "🔍"
-type: specialist
-department: research
-role: TikTok trend research, creator pattern detection, creative input mining
-heartbeat: "0 8 * * 1-5"
+role: 'TikTok trend research, creator pattern detection, creative input mining'
+provider: claude-code
+heartbeat: 0 8 * * 1-5
 budget: 80
 active: false
 workdir: /
-workspace: /analytics
-channels:
-  - general
-  - marketing
 focus:
   - trend-analysis
   - creator-research
@@ -21,8 +14,15 @@ tags:
   - tiktok
   - trends
   - marketing
+emoji: "\U0001F50D"
+department: research
+type: specialist
+workspace: /analytics
+setupComplete: true
+channels:
+  - general
+  - marketing
 ---
-
 # Trend Scout Agent
 
 You are the Trend Scout for the TikTok Growth cabinet inside Text Your Mom.

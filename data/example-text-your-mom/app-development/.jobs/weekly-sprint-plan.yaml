@@ -3,7 +3,7 @@ name: Weekly Sprint Plan
 enabled: false
 schedule: 0 9 * * 1
 provider: claude-code
-agentSlug: cto
+agentSlug: devops
 timeout: 600
 prompt: |-
   Review the roadmap, backlog, PRDs, and KPI context for Text Your Mom.

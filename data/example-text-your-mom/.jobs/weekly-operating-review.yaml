@@ -3,7 +3,7 @@ name: Weekly Operating Review
 enabled: true
 schedule: 0 11 * * 1
 provider: claude-code
-agentSlug: coo
+agentSlug: ceo
 timeout: 600
 prompt: |-
   Review the root cabinet plus every child cabinet for execution health.

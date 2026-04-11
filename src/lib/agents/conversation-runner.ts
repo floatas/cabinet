@@ -87,20 +87,23 @@ export async function buildManualConversationPrompt(input: {
   agentSlug: string;
   userMessage: string;
   mentionedPaths?: string[];
+  cabinetPath?: string;
 }): Promise<{
   prompt: string;
   title: string;
   cwd?: string;
   providerId: string;
+  cabinetPath?: string;
 }> {
   const persona = input.agentSlug === "general"
     ? null
-    : await readPersona(input.agentSlug);
+    : await readPersona(input.agentSlug, input.cabinetPath);
   const mentionContext = await buildMentionContext(input.mentionedPaths || []);
+  const baseCwd = input.cabinetPath ? path.join(DATA_DIR, input.cabinetPath) : DATA_DIR;
   const cwd =
     persona?.workdir && persona.workdir !== "/data"
       ? `${DATA_DIR}/${persona.workdir.replace(/^\/+/, "")}`
-      : DATA_DIR;
+      : baseCwd;
 
   const prompt = [
     buildAgentContextHeader(persona, input.agentSlug),
@@ -117,6 +120,7 @@ export async function buildManualConversationPrompt(input: {
     title: makeTitle(input.userMessage),
     cwd,
     providerId: persona?.provider || getDefaultProviderId(),
+    cabinetPath: input.cabinetPath,
   };
 }
 
