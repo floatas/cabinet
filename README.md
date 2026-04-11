@@ -36,6 +36,9 @@
   </a>&nbsp;
   <a href="https://runcabinet.com/waitlist" target="_blank" rel="noopener noreferrer">
     <img src="https://img.shields.io/badge/%F0%9F%97%84%EF%B8%8F%20Cabinet-Cloud%20Waitlist-55c938?style=for-the-badge&labelColor=4b4b4b" alt="Cabinet Cloud Waitlist" valign="middle">
+  </a>&nbsp;
+  <a href="https://coderabbit.ai" target="_blank" rel="noopener noreferrer">
+    <img src="https://img.shields.io/coderabbit/prs/github/hilash/cabinet?utm_source=oss&utm_medium=github&utm_campaign=hilash%2Fcabinet&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews" alt="CodeRabbit Pull Request Reviews" valign="middle">
   </a>
 </p>
 
