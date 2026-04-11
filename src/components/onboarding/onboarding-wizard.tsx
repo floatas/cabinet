@@ -1078,11 +1078,10 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
                           { title: "Verify login", detail: "Check that you're logged in:", cmd: "claude auth status" },
                         ]
                       : [
-                          { title: "Get an OpenAI API key", detail: "You need an OpenAI account with API access.", link: { label: "OpenAI API keys", url: "https://platform.openai.com/api-keys" } },
                           { title: "Open a terminal", detail: "You'll need a terminal to run the next steps.", openTerminal: true },
-                          { title: "Set your API key", detail: "Add to your shell profile to persist:", cmd: "export OPENAI_API_KEY=sk-..." },
-                          { title: "Install Codex CLI", detail: "Run the following in your terminal:", cmd: "npm install -g @openai/codex" },
-                          { title: "Verify it works", detail: "If it prints a version, you're good:", cmd: "codex --version" },
+                          { title: "Install Codex CLI", detail: "Run the following in your terminal:", cmd: "npm i -g @openai/codex" },
+                          { title: "Log in to Codex", detail: "Authenticate with your ChatGPT or API account:", cmd: "codex login" },
+                          { title: "Verify login", detail: "Check that you're logged in:", cmd: "codex login status" },
                         ];
                     return (
                       <div
