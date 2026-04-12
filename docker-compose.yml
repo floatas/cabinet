@@ -1,0 +1,17 @@
+services:
+  cabinet:
+    image: ghcr.io/floatas/cabinet:latest
+    container_name: cabinet
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+    volumes:
+      - cabinet-data:/data
+    environment:
+      - KB_PASSWORD=
+      - DOMAIN=localhost
+      - CABINET_DATA_DIR=/data
+
+volumes:
+  cabinet-data:
