@@ -20,7 +20,7 @@ FROM node:20-slim AS runner
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
+    git bash \
     && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production

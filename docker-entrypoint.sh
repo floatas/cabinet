@@ -1,5 +1,8 @@
-#!/bin/sh
+#!/bin/bash
 set -e
+
+# Mark /data as safe for git
+git config --global --add safe.directory /data
 
 # Copy default data if /data is empty (first run)
 if [ ! -f /data/index.md ]; then
@@ -17,6 +20,9 @@ fi
 # Start both processes
 echo "Starting Cabinet..."
 node server.js &
+NEXT_PID=$!
 npx tsx server/cabinet-daemon.ts &
+DAEMON_PID=$!
 
-wait -n
+# Wait for either to exit
+wait -n $NEXT_PID $DAEMON_PID 2>/dev/null || wait $NEXT_PID
