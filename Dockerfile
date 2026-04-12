@@ -31,17 +31,9 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
-# Daemon and its dependencies
+# Daemon needs full node_modules (tsx, native modules, and their deps)
 COPY --from=builder /app/server ./server
-COPY --from=builder /app/node_modules/tsx ./node_modules/tsx
-COPY --from=builder /app/node_modules/node-pty ./node_modules/node-pty
-COPY --from=builder /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
-COPY --from=builder /app/node_modules/simple-git ./node_modules/simple-git
-COPY --from=builder /app/node_modules/node-cron ./node_modules/node-cron
-COPY --from=builder /app/node_modules/ws ./node_modules/ws
-COPY --from=builder /app/node_modules/chokidar ./node_modules/chokidar
-COPY --from=builder /app/node_modules/gray-matter ./node_modules/gray-matter
-COPY --from=builder /app/node_modules/js-yaml ./node_modules/js-yaml
+COPY --from=deps /app/node_modules ./node_modules
 
 # Agent library templates
 COPY --from=builder /app/data/.agents/.library ./data-defaults/.agents/.library

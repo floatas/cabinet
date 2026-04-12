@@ -21,7 +21,7 @@ fi
 echo "Starting Cabinet..."
 node server.js &
 NEXT_PID=$!
-npx tsx server/cabinet-daemon.ts &
+node /app/node_modules/tsx/dist/cli.mjs server/cabinet-daemon.ts &
 DAEMON_PID=$!
 
 # Wait for either to exit
