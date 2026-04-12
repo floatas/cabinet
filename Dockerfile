@@ -1,10 +1,9 @@
-# Stage 1: Install dependencies
-FROM node:20-slim AS deps
+# Stage 1: Install dependencies (full image for native build tools)
+FROM node:20 AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts && \
-    # Rebuild native modules for Linux
     npm rebuild better-sqlite3 node-pty
 
 # Stage 2: Build Next.js
