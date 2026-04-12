@@ -1,5 +1,7 @@
 # Progress
 
+[2026-04-12] Fixed search API recursing into embedded app/website directories. `collectPages` in `src/app/api/search/route.ts` now skips directories that have `index.html` but no `index.md`, preventing internal files like `about.md` inside a pipeline app from appearing in Cmd+K search results.
+
 [2026-04-12] Created data/getting-started/ KB section with three pages: index (full file-type matrix + sidebar icon reference + keyboard shortcuts + features overview), apps-and-repos (embedded apps, full-screen .app mode, .repo.yaml spec), and symlinks-and-load-knowledge (Load Knowledge flow, .cabinet-meta, .repo.yaml, CABINET_DATA_DIR). Updated data/CLAUDE.md with a supported file types table covering all 13 types the tree-builder recognises. Updated data/index.md with a link to the new guide.
 
 [2026-04-12] Cabinet page agents section: replaced individual bordered cards with a compact divider-based list. Agents are grouped by department (executive first, general last) with a muted section label row. Each row shows emoji, name, role, heartbeat pill, and active dot. The lead/CEO agent gets a small amber Crown icon inline with their name instead of a separate card.

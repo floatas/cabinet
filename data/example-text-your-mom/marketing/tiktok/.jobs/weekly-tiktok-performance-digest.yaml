@@ -3,6 +3,7 @@ name: Weekly TikTok Performance Digest
 enabled: false
 schedule: 0 9 * * 1
 provider: claude-code
+ownerAgent: image-creator
 agentSlug: image-creator
 timeout: 600
 prompt: |-
@@ -13,5 +14,6 @@ prompt: |-
   - what emotional angles got the best response
   - what to produce next week
   Save the digest in /analytics.
+cabinetPath: example-text-your-mom/marketing/tiktok
 createdAt: '2026-04-11T00:00:00.000Z'
 updatedAt: '2026-04-11T00:00:00.000Z'

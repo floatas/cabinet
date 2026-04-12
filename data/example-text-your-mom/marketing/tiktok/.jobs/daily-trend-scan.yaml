@@ -3,6 +3,7 @@ name: Daily Trend Scan
 enabled: false
 schedule: 0 8 * * 1-5
 provider: claude-code
+ownerAgent: image-creator
 agentSlug: image-creator
 timeout: 600
 prompt: |-
@@ -13,5 +14,6 @@ prompt: |-
   - group chat avoidance
   - wholesome but funny accountability
   Update content-ideas.csv with new hooks, formats, and suggested post dates.
+cabinetPath: example-text-your-mom/marketing/tiktok
 createdAt: '2026-04-11T00:00:00.000Z'
 updatedAt: '2026-04-11T00:00:00.000Z'

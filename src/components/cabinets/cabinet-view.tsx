@@ -81,12 +81,16 @@ function CompactOrgChart({
   jobs,
   children,
   onAgentClick,
+  onAgentSend,
+  onChildCabinetClick,
 }: {
   cabinetName: string;
   agents: CabinetAgentSummary[];
   jobs: CabinetJobSummary[];
   children: CabinetOverview["children"];
   onAgentClick?: (agent: CabinetAgentSummary) => void;
+  onAgentSend?: (agent: CabinetAgentSummary) => void;
+  onChildCabinetClick?: (cabinet: CabinetOverview["children"][number]) => void;
 }) {
   const allAgents = [...agents].sort(sortOrgAgents);
   const grouped = Object.entries(
@@ -224,32 +228,47 @@ function CompactOrgChart({
 
                         return (
                           <div key={agent.scopedId} className="flex w-full flex-col items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => onAgentClick?.(agent)}
-                              className={cn(
-                                "flex w-full max-w-[190px] items-center gap-2 rounded-xl border bg-background px-3 py-2 text-left transition-colors",
-                                onAgentClick && "hover:bg-muted/30"
-                              )}
-                              style={{ borderColor: "rgba(139, 94, 60, 0.14)" }}
-                            >
-                              <span className="text-base leading-none">{agent.emoji || "🤖"}</span>
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-[12px] font-medium text-foreground">
-                                  {agent.name}
-                                </p>
-                                <p className="truncate text-[10px] text-muted-foreground">
-                                  {agent.role}
-                                  {agent.inherited ? ` · ${agent.cabinetName}` : ""}
-                                </p>
-                              </div>
-                              <span
+                            <div className="flex w-full max-w-[220px] items-stretch gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => onAgentClick?.(agent)}
                                 className={cn(
-                                  "h-1.5 w-1.5 rounded-full shrink-0",
-                                  agent.active ? "bg-emerald-500" : "bg-muted-foreground/30"
+                                  "flex min-w-0 flex-1 items-center gap-2 rounded-xl border bg-background px-3 py-2 text-left transition-colors",
+                                  onAgentClick && "hover:bg-muted/30"
                                 )}
-                              />
-                            </button>
+                                style={{ borderColor: "rgba(139, 94, 60, 0.14)" }}
+                              >
+                                <span className="text-base leading-none">{agent.emoji || "🤖"}</span>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-[12px] font-medium text-foreground">
+                                    {agent.name}
+                                  </p>
+                                  <p className="truncate text-[10px] text-muted-foreground">
+                                    {agent.role}
+                                    {agent.inherited ? ` · ${agent.cabinetName}` : ""}
+                                  </p>
+                                </div>
+                                <span
+                                  className={cn(
+                                    "h-1.5 w-1.5 rounded-full shrink-0",
+                                    agent.active ? "bg-emerald-500" : "bg-muted-foreground/30"
+                                  )}
+                                />
+                              </button>
+
+                              {onAgentSend ? (
+                                <button
+                                  type="button"
+                                  onClick={() => onAgentSend(agent)}
+                                  className="inline-flex shrink-0 items-center justify-center rounded-xl border bg-background px-3 text-[10px] font-medium text-foreground transition-colors hover:bg-muted/30"
+                                  style={{ borderColor: "rgba(139, 94, 60, 0.14)" }}
+                                  aria-label={`Send a task to ${agent.name}`}
+                                  title={`Send a task to ${agent.name}`}
+                                >
+                                  Send
+                                </button>
+                              ) : null}
+                            </div>
 
                             {agentJobs.length > 0 ? (
                               <div className="flex w-full flex-col items-center gap-1">
@@ -287,9 +306,14 @@ function CompactOrgChart({
               <TreeLabel>Child cabinets</TreeLabel>
               <div className="mt-2 flex flex-wrap gap-3">
                 {children.map((child) => (
-                  <div
+                  <button
                     key={child.path}
-                    className="inline-flex items-center gap-2 rounded-xl border bg-background px-3 py-2"
+                    type="button"
+                    onClick={() => onChildCabinetClick?.(child)}
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-xl border bg-background px-3 py-2 text-left transition-colors",
+                      onChildCabinetClick && "hover:bg-muted/30"
+                    )}
                     style={{ borderColor: "rgba(139, 94, 60, 0.14)" }}
                   >
                     <FolderTree className="h-3.5 w-3.5 shrink-0 text-[rgb(139,94,60)]" />
@@ -299,7 +323,7 @@ function CompactOrgChart({
                         depth {child.cabinetDepth ?? 1}
                       </p>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -460,13 +484,15 @@ function CabinetTaskComposer({
   cabinetPath,
   agents,
   displayName,
-  cabinetName,
+  requestedAgent,
+  focusRequest,
   onNavigate,
 }: {
   cabinetPath: string;
   agents: CabinetAgentSummary[];
   displayName: string;
-  cabinetName: string;
+  requestedAgent?: CabinetAgentSummary | null;
+  focusRequest?: number;
   onNavigate: (agentSlug: string, agentCabinetPath: string, conversationId: string) => void;
 }) {
   const [selectedAgent, setSelectedAgent] = useState<CabinetAgentSummary | null>(null);
@@ -475,6 +501,7 @@ function CabinetTaskComposer({
   const [agentQuery, setAgentQuery] = useState<string | null>(null);
   const [agentIndex, setAgentIndex] = useState(0);
   const [agentMentionStart, setAgentMentionStart] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-select first active own-cabinet agent on load
@@ -488,12 +515,25 @@ function CabinetTaskComposer({
     }
   }, [agents, selectedAgent]);
 
+  useEffect(() => {
+    if (!requestedAgent) return;
+    setSelectedAgent(requestedAgent);
+  }, [requestedAgent]);
+
+  useEffect(() => {
+    if (!focusRequest) return;
+    rootRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => {
+      textareaRef.current?.focus();
+    }, 120);
+  }, [focusRequest]);
+
   // Auto-grow textarea
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
+    el.style.height = `${Math.max(el.scrollHeight, 72)}px`;
   }, [prompt]);
 
   const greeting = getGreeting();
@@ -581,106 +621,126 @@ function CabinetTaskComposer({
     : "Choose an agent and describe the next task.";
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/60">
-          Mission board
-        </p>
+    <div ref={rootRef} className="space-y-5">
+      <div className="space-y-3">
         <h1 className="font-body-serif text-[2.35rem] leading-[0.96] text-foreground sm:text-[3.15rem]">
           {greeting}, {displayName}.
           <br />
           What are we working on today?
         </h1>
-        <p className="text-sm text-muted-foreground">
-          Working inside {cabinetName}
-        </p>
       </div>
 
-      <div className="relative overflow-hidden rounded-[22px] border border-border/80 bg-background">
-        <textarea
-          ref={textareaRef}
-          value={prompt}
-          onChange={(e) =>
-            handlePromptChange(e.target.value, e.target.selectionStart || e.target.value.length)
-          }
-          onKeyDown={(e) => {
-            if (agentQuery !== null && filteredAgents.length > 0) {
-              if (e.key === "ArrowDown") {
-                e.preventDefault();
-                setAgentIndex((current) => (current + 1) % filteredAgents.length);
-                return;
-              }
-              if (e.key === "ArrowUp") {
-                e.preventDefault();
-                setAgentIndex((current) =>
-                  current === 0 ? filteredAgents.length - 1 : current - 1
-                );
-                return;
-              }
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                const agent = filteredAgents[agentIndex];
-                if (agent) assignAgent(agent);
-                return;
-              }
-              if (e.key === "Escape") {
-                setAgentQuery(null);
-                return;
-              }
+      <div className="space-y-3">
+        <div className="relative w-full">
+          <textarea
+            ref={textareaRef}
+            value={prompt}
+            onChange={(e) =>
+              handlePromptChange(e.target.value, e.target.selectionStart || e.target.value.length)
             }
+            onKeyDown={(e) => {
+              if (agentQuery !== null && filteredAgents.length > 0) {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setAgentIndex((current) => (current + 1) % filteredAgents.length);
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setAgentIndex((current) =>
+                    current === 0 ? filteredAgents.length - 1 : current - 1
+                  );
+                  return;
+                }
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  const agent = filteredAgents[agentIndex];
+                  if (agent) assignAgent(agent);
+                  return;
+                }
+                if (e.key === "Escape") {
+                  setAgentQuery(null);
+                  return;
+                }
+              }
 
-            if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-              e.preventDefault();
-              void submit(prompt);
-            } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-              e.preventDefault();
-              setPrompt((p) => p + "\n");
-            }
-          }}
-          placeholder={placeholder}
-          disabled={submitting || !selectedAgent}
-          rows={3}
-          className={cn(
-            "min-h-[180px] w-full resize-none bg-transparent px-5 py-5 text-[1.05rem] leading-8 text-foreground outline-none placeholder:text-muted-foreground sm:px-6 sm:py-6",
-            (!selectedAgent || submitting) && "opacity-60"
-          )}
-        />
-
-        {agentQuery !== null ? (
-          <div className="absolute inset-x-4 bottom-[4.5rem] z-20 rounded-2xl border border-border bg-popover shadow-lg">
-            {filteredAgents.length > 0 ? (
-              <div className="py-1.5">
-                {filteredAgents.slice(0, 6).map((agent, index) => (
-                  <button
-                    key={agent.scopedId}
-                    type="button"
-                    onClick={() => assignAgent(agent)}
-                    className={cn(
-                      "flex w-full items-center gap-3 px-3 py-2 text-left transition-colors",
-                      index === agentIndex ? "bg-muted/70" : "hover:bg-muted/40"
-                    )}
-                  >
-                    <span className="text-base leading-none">{agent.emoji || "🤖"}</span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-foreground">{agent.name}</p>
-                      <p className="truncate text-[11px] text-muted-foreground">
-                        {agent.role}
-                        {agent.inherited ? ` · ${agent.cabinetName}` : ""}
-                      </p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className="px-3 py-2 text-xs text-muted-foreground">
-                No visible agents match that name yet.
-              </p>
+              if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+                e.preventDefault();
+                void submit(prompt);
+              } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                setPrompt((p) => p + "\n");
+              }
+            }}
+            placeholder={placeholder}
+            disabled={submitting || !selectedAgent}
+            rows={1}
+            className={cn(
+              "min-h-[72px] w-full rounded-xl border border-border bg-card px-4 py-4 pr-16",
+              "text-sm text-foreground placeholder:text-muted-foreground",
+              "focus:outline-none focus:ring-2 focus:ring-ring",
+              "shadow-sm resize-none",
+              (!selectedAgent || submitting) && "opacity-60"
             )}
-          </div>
-        ) : null}
+          />
 
-        <div className="flex items-center justify-between gap-3 border-t border-border/70 px-4 py-3 sm:px-5">
-          <div className="inline-flex min-w-0 items-center gap-2 rounded-full border border-border bg-muted/15 px-3 py-1.5">
+          {agentQuery !== null ? (
+            <div className="absolute inset-x-0 top-[calc(100%+0.5rem)] z-20 rounded-2xl border border-border bg-popover shadow-lg">
+              {filteredAgents.length > 0 ? (
+                <div className="py-1.5">
+                  {filteredAgents.slice(0, 6).map((agent, index) => (
+                    <button
+                      key={agent.scopedId}
+                      type="button"
+                      onClick={() => assignAgent(agent)}
+                      className={cn(
+                        "flex w-full items-center gap-3 px-3 py-2 text-left transition-colors",
+                        index === agentIndex ? "bg-muted/70" : "hover:bg-muted/40"
+                      )}
+                    >
+                      <span className="text-base leading-none">{agent.emoji || "🤖"}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">{agent.name}</p>
+                        <p className="truncate text-[11px] text-muted-foreground">
+                          {agent.role}
+                          {agent.inherited ? ` · ${agent.cabinetName}` : ""}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="px-3 py-2 text-xs text-muted-foreground">
+                  No visible agents match that name yet.
+                </p>
+              )}
+            </div>
+          ) : null}
+
+          <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center">
+            <button
+              type="button"
+              onClick={() => void submit(prompt)}
+              disabled={!prompt.trim() || submitting || !selectedAgent}
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
+                prompt.trim() && !submitting
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                  : "bg-muted text-muted-foreground"
+              )}
+              aria-label="Start conversation"
+            >
+              {submitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="inline-flex min-w-0 items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5">
             {selectedAgent ? (
               <span className="text-sm leading-none">{selectedAgent.emoji || "🤖"}</span>
             ) : null}
@@ -705,19 +765,6 @@ function CabinetTaskComposer({
               )}
             </select>
           </div>
-
-          <Button
-            onClick={() => void submit(prompt)}
-            disabled={!prompt.trim() || submitting || !selectedAgent}
-            className="h-11 w-11 rounded-full p-0"
-            aria-label="Start conversation"
-          >
-            {submitting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </Button>
         </div>
       </div>
     </div>
@@ -864,6 +911,8 @@ export function CabinetView({ cabinetPath }: { cabinetPath: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("");
+  const [requestedAgent, setRequestedAgent] = useState<CabinetAgentSummary | null>(null);
+  const [composerFocusRequest, setComposerFocusRequest] = useState(0);
   const selectPage = useTreeStore((state) => state.selectPage);
   const loadPage = useEditorStore((state) => state.loadPage);
   const setSection = useAppStore((state) => state.setSection);
@@ -920,6 +969,11 @@ export function CabinetView({ cabinetPath }: { cabinetPath: string }) {
     },
     [cabinetPath, setSection]
   );
+
+  const primeTaskComposer = useCallback((agent: CabinetAgentSummary) => {
+    setRequestedAgent(agent);
+    setComposerFocusRequest((current) => current + 1);
+  }, []);
 
   const loadOverview = useCallback(async () => {
     setLoading(true);
@@ -1027,25 +1081,8 @@ export function CabinetView({ cabinetPath }: { cabinetPath: string }) {
           ) : null}
 
           <section className="border-b border-border/70 pb-10">
-            <div className="grid gap-8 xl:grid-cols-[minmax(0,1.1fr)_320px]">
-              <CabinetTaskComposer
-                cabinetPath={cabinetPath}
-                agents={overview?.agents || []}
-                displayName={boardName}
-                cabinetName={cabinetName}
-                onNavigate={(agentSlug, agentCabinetPath, conversationId) =>
-                  setSection({
-                    type: "agent",
-                    mode: "cabinet",
-                    slug: agentSlug,
-                    cabinetPath: agentCabinetPath,
-                    agentScopedId: `${agentCabinetPath}::agent::${agentSlug}`,
-                    conversationId,
-                  })
-                }
-              />
-
-              <div className="space-y-8 xl:pt-6">
+            <div className="space-y-10">
+              <div className="space-y-8">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/65">
                     Cabinet
@@ -1053,7 +1090,7 @@ export function CabinetView({ cabinetPath }: { cabinetPath: string }) {
                   <h2 className="mt-2 font-body-serif text-[2.2rem] leading-none tracking-tight text-foreground">
                     {cabinetName}
                   </h2>
-                  <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                  <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
                     {cabinetDescription}
                   </p>
                 </div>
@@ -1092,6 +1129,24 @@ export function CabinetView({ cabinetPath }: { cabinetPath: string }) {
                   </p>
                 </div>
               </div>
+
+              <CabinetTaskComposer
+                cabinetPath={cabinetPath}
+                agents={overview?.agents || []}
+                displayName={boardName}
+                requestedAgent={requestedAgent}
+                focusRequest={composerFocusRequest}
+                onNavigate={(agentSlug, agentCabinetPath, conversationId) =>
+                  setSection({
+                    type: "agent",
+                    mode: "cabinet",
+                    slug: agentSlug,
+                    cabinetPath: agentCabinetPath,
+                    agentScopedId: `${agentCabinetPath}::agent::${agentSlug}`,
+                    conversationId,
+                  })
+                }
+              />
             </div>
           </section>
 
@@ -1144,6 +1199,8 @@ export function CabinetView({ cabinetPath }: { cabinetPath: string }) {
                 jobs={overview.jobs}
                 children={overview.children}
                 onAgentClick={openCabinetAgent}
+                onAgentSend={primeTaskComposer}
+                onChildCabinetClick={(child) => openCabinet(child.path)}
               />
             ) : null}
           </section>
