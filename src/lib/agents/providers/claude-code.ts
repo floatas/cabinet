@@ -40,11 +40,19 @@ export const claudeCodeProvider: AgentProvider = {
   },
 
   buildSessionInvocation(prompt: string | undefined, _workdir: string) {
+    if (!prompt) {
+      // Interactive terminal mode: Claude's REPL exits silently via node-pty on some Linux
+      // systems. Spawn bash instead so the user gets a working NAS shell.
+      return {
+        command: "/bin/bash",
+        args: ["--login"],
+      };
+    }
     return {
       command: this.command || "claude",
       args: ["--dangerously-skip-permissions"],
-      initialPrompt: prompt?.trim() || undefined,
-      readyStrategy: prompt ? "claude" : undefined,
+      initialPrompt: prompt.trim(),
+      readyStrategy: "claude" as const,
     };
   },
 

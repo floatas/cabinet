@@ -69,11 +69,17 @@ function buildLaunchSpec(
     throw new Error(`Provider ${provider.id} does not define a ${mode} launch contract`);
   }
 
+  // If the invocation specifies an absolute path (e.g. /bin/bash for interactive terminal),
+  // use it directly. Otherwise resolve the provider's CLI command.
+  const resolvedCommand = invocation.command.startsWith("/")
+    ? invocation.command
+    : resolveCliCommand(provider);
+
   return {
     providerId: provider.id,
     providerName: provider.name,
     installMessage: provider.installMessage,
-    command: resolveCliCommand(provider),
+    command: resolvedCommand,
     args: invocation.args,
     initialPrompt: invocation.initialPrompt,
     readyStrategy: invocation.readyStrategy,
