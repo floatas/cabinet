@@ -1357,6 +1357,18 @@ export function TasksBoard({
                 lane="failed"
                 count={groupedConversations.failed.length}
                 emptyState="Failed runs will surface here so they are easy to retry."
+                headerAction={
+                  groupedConversations.failed.length > 0 ? (
+                    <button
+                      onClick={() => void Promise.all(groupedConversations.failed.map((c) => restartConversation(c)))}
+                      title="Restart all failed tasks"
+                      className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-muted-foreground hover:bg-primary/15 hover:text-primary transition-colors"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      Restart All
+                    </button>
+                  ) : null
+                }
               >
                 {groupedConversations.failed.map((conversation) => {
                   const agent =
