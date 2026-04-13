@@ -49,6 +49,9 @@ import type { CabinetVisibilityMode } from "@/types/cabinets";
 import type { ConversationDetail, ConversationMeta } from "@/types/conversations";
 import type { JobConfig } from "@/types/jobs";
 import type { AgentListItem, ProviderInfo } from "@/types/agents";
+import { flattenTree } from "@/lib/tree-utils";
+import { ComposerInput } from "@/components/composer/composer-input";
+import { useComposer, type MentionableItem } from "@/hooks/use-composer";
 
 type TriggerFilter = "all" | "manual" | "job" | "heartbeat";
 type StatusFilter = "all" | "running" | "completed" | "failed";
@@ -225,37 +228,20 @@ function ActivityBeacon({
   );
 }
 
-function flattenTree(nodes: TreeNode[]): { path: string; title: string }[] {
-  const pages: { path: string; title: string }[] = [];
-
-  for (const node of nodes) {
-    if (node.type !== "website") {
-      pages.push({
-        path: node.path,
-        title: node.frontmatter?.title || node.name,
-      });
-    }
-    if (node.children) {
-      pages.push(...flattenTree(node.children));
-    }
-  }
-
-  return pages;
-}
-
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function useHorizontalResize(initialWidth: number, minWidth: number, maxWidth: number) {
+function useHorizontalResize(initialWidth: number, minWidth: number, maxWidth: number, direction: "left" | "right" = "left") {
   const [width, setWidth] = useState(initialWidth);
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   useEffect(() => {
     function handlePointerMove(event: PointerEvent) {
       if (!dragStateRef.current) return;
+      const delta = event.clientX - dragStateRef.current.startX;
       const nextWidth =
-        dragStateRef.current.startWidth + (event.clientX - dragStateRef.current.startX);
+        dragStateRef.current.startWidth + (direction === "right" ? -delta : delta);
       setWidth(clamp(nextWidth, minWidth, maxWidth));
     }
 
@@ -320,10 +306,6 @@ async function readErrorMessage(
   } catch {
     return fallback;
   }
-}
-
-function makePageContextLabel(path: string, pages: { path: string; title: string }[]): string {
-  return pages.find((page) => page.path === path)?.title || path;
 }
 
 function TriggerChip({
@@ -418,13 +400,6 @@ export function AgentsWorkspace({
   const [jobDraft, setJobDraft] = useState<JobConfig | null>(null);
   const [triggerFilter, setTriggerFilter] = useState<TriggerFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [composerInput, setComposerInput] = useState("");
-  const [mentionedPaths, setMentionedPaths] = useState<string[]>([]);
-  const [submitting, setSubmitting] = useState(false);
-  const [showMentions, setShowMentions] = useState(false);
-  const [mentionQuery, setMentionQuery] = useState("");
-  const [mentionIndex, setMentionIndex] = useState(0);
-  const [mentionStartPos, setMentionStartPos] = useState(0);
   const [creatingAgent, setCreatingAgent] = useState(false);
   const [deletingAgent, setDeletingAgent] = useState(false);
   const [newAgentDraft, setNewAgentDraft] = useState<NewAgentDraft>(DEFAULT_NEW_AGENT);
@@ -452,10 +427,9 @@ export function AgentsWorkspace({
   const [quickSendAgent, setQuickSendAgent] = useState<string | null>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [runningJobId, setRunningJobId] = useState<string | null>(null);
+  const [agentJobsMap, setAgentJobsMap] = useState<Record<string, JobConfig[]>>({});
   const lastSavedSettingsRef = useRef<string | null>(null);
-  const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const quickSendTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const conversationsPanel = useHorizontalResize(340, 260, 520);
+  const conversationsPanel = useHorizontalResize(340, 260, 520, "right");
   const treeNodes = useTreeStore((state) => state.nodes);
   const selectPage = useTreeStore((state) => state.selectPage);
   const section = useAppStore((state) => state.section);
@@ -475,11 +449,56 @@ export function AgentsWorkspace({
   const allPages = flattenTree(treeNodes);
   const settingsAgentSlug =
     settingsTarget && settingsTarget !== "directory" ? settingsTarget : null;
-  const filteredMentions = allPages.filter(
-    (page) =>
-      page.title.toLowerCase().includes(mentionQuery.toLowerCase()) ||
-      page.path.toLowerCase().includes(mentionQuery.toLowerCase())
-  );
+
+  // Build mentionable items for composer
+  const mentionItems: MentionableItem[] = [
+    ...agents
+      .filter((a) => a.slug !== "general")
+      .map((a) => ({
+        type: "agent" as const,
+        id: a.slug,
+        label: a.name,
+        sublabel: a.role || "",
+        icon: a.emoji,
+      })),
+    ...allPages.map((p) => ({
+      type: "page" as const,
+      id: p.path,
+      label: p.title,
+      sublabel: p.path,
+    })),
+  ];
+
+  // Shared composer hook for agent workspace panel and quick-send popup
+  const submitTargetRef = useRef<string>("general");
+  const composer = useComposer({
+    items: mentionItems,
+    onSubmit: async ({ message, mentionedPaths: paths }) => {
+      const targetAgentSlug = submitTargetRef.current;
+      const response = await fetch("/api/agents/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agentSlug: targetAgentSlug,
+          userMessage: message,
+          mentionedPaths: paths,
+          cabinetPath: effectiveCabinetPath,
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to start conversation");
+      const data = await response.json();
+      const conversation = data.conversation as ConversationMeta;
+      setQuickSendAgent(null);
+      setActiveAgentSlug(targetAgentSlug);
+      setSection(buildAgentSection(targetAgentSlug, effectiveCabinetPath));
+      setSelectedConversationId(conversation.id);
+      setSelectedConversationCabinetPath(conversation.cabinetPath || effectiveCabinetPath);
+      setMode("conversation");
+      await refreshConversations();
+    },
+  });
+
   const enabledCliProviders = providers.filter(
     (provider) => provider.type === "cli" && provider.enabled
   );
@@ -731,13 +750,6 @@ export function AgentsWorkspace({
   }, [activeAgentSlug, triggerFilter, statusFilter]);
 
   useEffect(() => {
-    const el = composerTextareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  }, [composerInput]);
-
-  useEffect(() => {
     void refreshLibrary();
     void refreshProviders();
   }, []);
@@ -759,6 +771,25 @@ export function AgentsWorkspace({
     void refreshConversations();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveVisibilityMode]);
+
+  // Fetch jobs for all agents in parallel for the org chart display
+  useEffect(() => {
+    const slugs = agents.filter((a) => a.slug !== "general");
+    if (slugs.length === 0) return;
+    void Promise.all(
+      slugs.map((a) => {
+        const query = effectiveCabinetPath
+          ? `?cabinetPath=${encodeURIComponent(effectiveCabinetPath)}`
+          : "";
+        return fetch(`/api/agents/${a.slug}/jobs${query}`)
+          .then((r) => (r.ok ? r.json() : { jobs: [] }))
+          .then((d) => [a.slug, (d.jobs || []) as JobConfig[]] as const)
+          .catch(() => [a.slug, [] as JobConfig[]] as const);
+      })
+    ).then((entries) => {
+      setAgentJobsMap(Object.fromEntries(entries));
+    });
+  }, [agents]);
 
   useEffect(() => {
     const pendingConvId = section.conversationId || null;
@@ -824,12 +855,10 @@ export function AgentsWorkspace({
   }
 
   function openAgentComposer(agentSlug: string) {
-    setComposerInput("");
-    setMentionedPaths([]);
-    setShowMentions(false);
+    composer.reset();
     setQuickSendAgent(agentSlug);
     requestAnimationFrame(() => {
-      quickSendTextareaRef.current?.focus();
+      composer.textareaRef.current?.focus();
     });
   }
 
@@ -1074,85 +1103,6 @@ export function AgentsWorkspace({
       setAgentFlowError(`Unable to add ${template.name} right now.`);
     } finally {
       setAddingAgentSlug(null);
-    }
-  }
-
-  function handleComposerInput(value: string, cursorPosition: number) {
-    setComposerInput(value);
-
-    // Remove mentioned paths whose @Title no longer appears in the text
-    setMentionedPaths((current) =>
-      current.filter((path) => {
-        const title = makePageContextLabel(path, allPages);
-        return value.includes(`@${title}`);
-      })
-    );
-
-    const textBefore = value.slice(0, cursorPosition);
-    const atIndex = textBefore.lastIndexOf("@");
-    if (atIndex === -1) {
-      setShowMentions(false);
-      return;
-    }
-
-    const charBefore = atIndex > 0 ? textBefore[atIndex - 1] : " ";
-    if (charBefore !== " " && charBefore !== "\n" && atIndex !== 0) {
-      setShowMentions(false);
-      return;
-    }
-
-    const query = textBefore.slice(atIndex + 1);
-    if (query.includes(" ") || query.includes("\n")) {
-      setShowMentions(false);
-      return;
-    }
-
-    setMentionStartPos(atIndex);
-    setMentionQuery(query);
-    setMentionIndex(0);
-    setShowMentions(true);
-  }
-
-  function insertMention(path: string, title: string) {
-    const before = composerInput.slice(0, mentionStartPos);
-    const after = composerInput.slice(mentionStartPos + mentionQuery.length + 1);
-    setComposerInput(`${before}@${title} ${after}`);
-    setMentionedPaths((current) =>
-      current.includes(path) ? current : [...current, path]
-    );
-    setShowMentions(false);
-  }
-
-  async function submitConversation(targetAgentSlug: string) {
-    if (!composerInput.trim()) return;
-
-    setSubmitting(true);
-    try {
-      const response = await fetch("/api/agents/conversations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          agentSlug: targetAgentSlug,
-          userMessage: composerInput.trim(),
-          mentionedPaths,
-          cabinetPath: effectiveCabinetPath,
-        }),
-      });
-
-      if (!response.ok) return;
-      const data = await response.json();
-      const conversation = data.conversation as ConversationMeta;
-      setComposerInput("");
-      setMentionedPaths([]);
-      setQuickSendAgent(null);
-      setActiveAgentSlug(targetAgentSlug);
-      setSection(buildAgentSection(targetAgentSlug, effectiveCabinetPath));
-      setSelectedConversationId(conversation.id);
-      setSelectedConversationCabinetPath(conversation.cabinetPath || effectiveCabinetPath);
-      setMode("conversation");
-      await refreshConversations();
-    } finally {
-      setSubmitting(false);
     }
   }
 
@@ -1673,10 +1623,27 @@ export function AgentsWorkspace({
                     </p>
                   </div>
                 </div>
-                <div className="mt-4">
+                <div className="mt-4 flex flex-wrap items-center gap-1.5">
                   <span className="inline-flex items-center rounded-full bg-background/72 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
                     {startCase(orgRoot.type, "Lead")}
                   </span>
+                  {orgRoot.heartbeat ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-background/72 px-2 py-0.5 text-[10px] text-muted-foreground">
+                      <HeartPulse className="h-2.5 w-2.5 text-pink-400" />
+                      {cronToHuman(orgRoot.heartbeat)}
+                    </span>
+                  ) : null}
+                  {(agentJobsMap[orgRoot.slug] || []).slice(0, 3).map((job) => (
+                    <span key={job.id} className="inline-flex items-center gap-1 rounded-full bg-background/72 px-2 py-0.5 text-[10px] text-muted-foreground">
+                      <Clock3 className="h-2.5 w-2.5 text-emerald-400" />
+                      {job.name}
+                    </span>
+                  ))}
+                  {(agentJobsMap[orgRoot.slug] || []).length > 3 ? (
+                    <span className="text-[10px] text-muted-foreground">
+                      +{(agentJobsMap[orgRoot.slug] || []).length - 3} more
+                    </span>
+                  ) : null}
                 </div>
               </button>
 
@@ -1766,10 +1733,27 @@ export function AgentsWorkspace({
                                     </div>
                                   </div>
 
-                                  <div className="mt-3">
+                                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
                                     <span className="inline-flex items-center rounded-full bg-background/76 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                                       {startCase(agent.type, "Specialist")}
                                     </span>
+                                    {agent.heartbeat ? (
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-background/76 px-2 py-0.5 text-[10px] text-muted-foreground">
+                                        <HeartPulse className="h-2.5 w-2.5 text-pink-400" />
+                                        {cronToHuman(agent.heartbeat)}
+                                      </span>
+                                    ) : null}
+                                    {(agentJobsMap[agent.slug] || []).slice(0, 2).map((job) => (
+                                      <span key={job.id} className="inline-flex items-center gap-1 rounded-full bg-background/76 px-2 py-0.5 text-[10px] text-muted-foreground">
+                                        <Clock3 className="h-2.5 w-2.5 text-emerald-400" />
+                                        {job.name}
+                                      </span>
+                                    ))}
+                                    {(agentJobsMap[agent.slug] || []).length > 2 ? (
+                                      <span className="text-[10px] text-muted-foreground">
+                                        +{(agentJobsMap[agent.slug] || []).length - 2} more
+                                      </span>
+                                    ) : null}
                                   </div>
                                 </div>
                               </div>
@@ -1794,106 +1778,17 @@ export function AgentsWorkspace({
 
   function renderSettingsComposerPanel(agentSlug: string) {
     const panelAgent = agents.find((agent) => agent.slug === agentSlug) || null;
+    submitTargetRef.current = agentSlug;
 
     return (
-      <div className="relative z-20 flex shrink-0 flex-col rounded-2xl border border-border bg-card">
-        <div className="flex flex-col">
-          <textarea
-            value={composerInput}
-            onChange={(event) =>
-              handleComposerInput(
-                event.target.value,
-                event.target.selectionStart || event.target.value.length
-              )
-            }
-            onKeyDown={(event) => {
-              if (showMentions && filteredMentions.length > 0) {
-                if (event.key === "ArrowDown") {
-                  event.preventDefault();
-                  setMentionIndex((current) => (current + 1) % filteredMentions.length);
-                } else if (event.key === "ArrowUp") {
-                  event.preventDefault();
-                  setMentionIndex((current) =>
-                    current === 0 ? filteredMentions.length - 1 : current - 1
-                  );
-                } else if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  const page = filteredMentions[mentionIndex];
-                  if (page) insertMention(page.path, page.title);
-                } else if (event.key === "Escape") {
-                  setShowMentions(false);
-                }
-                return;
-              }
-
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                event.preventDefault();
-                void submitConversation(agentSlug);
-              }
-            }}
-            ref={composerTextareaRef}
-            placeholder={`Ask ${panelAgent?.name || agentSlug} to work on something. Type @ to attach a page as context.`}
-            style={{ minHeight: "80px", maxHeight: "260px" }}
-            className="pointer-events-auto w-full resize-none overflow-y-auto bg-transparent px-4 pt-4 pb-2 text-[13px] text-foreground caret-foreground outline-none placeholder:text-muted-foreground/60"
-          />
-          {mentionedPaths.length > 0 ? (
-            <div className="flex flex-wrap gap-2 px-4 pb-2">
-              {mentionedPaths.map((path) => (
-                <span
-                  key={path}
-                  className="group inline-flex items-center gap-0.5 rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground"
-                >
-                  @{makePageContextLabel(path, allPages)}
-                  <button
-                    onClick={() =>
-                      setMentionedPaths((current) => current.filter((entry) => entry !== path))
-                    }
-                    className="ml-0.5 inline-flex h-3.5 w-0 items-center justify-center overflow-hidden rounded-full opacity-0 transition-all duration-150 group-hover:w-3.5 group-hover:opacity-100 hover:bg-foreground/10"
-                  >
-                    <X className="h-2.5 w-2.5" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          ) : null}
-          {showMentions && filteredMentions.length > 0 ? (
-            <div className="absolute inset-x-0 bottom-full z-20 mb-2 max-h-[280px] overflow-y-auto rounded-xl border border-border bg-popover p-1 shadow-lg">
-              {filteredMentions.slice(0, 6).map((page, index) => (
-                <button
-                  key={page.path}
-                  onClick={() => insertMention(page.path, page.title)}
-                  className={cn(
-                    "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12px]",
-                    index === mentionIndex
-                      ? "bg-accent text-foreground"
-                      : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                  )}
-                >
-                  <span className="truncate">{page.title}</span>
-                  <span className="ml-3 truncate text-[11px] text-muted-foreground">
-                    {page.path}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : null}
-          <div className="flex items-center justify-end gap-2 px-4 pb-3">
-            <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">⌘</kbd>
-              <span>+</span>
-              <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">↵</kbd>
-            </div>
-            <Button
-              className="h-8 gap-2 text-xs"
-              onClick={() => void submitConversation(agentSlug)}
-              disabled={submitting}
-            >
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              Start
-            </Button>
-          </div>
-        </div>
-      </div>
+      <ComposerInput
+        composer={composer}
+        placeholder={`Ask ${panelAgent?.name || agentSlug} to work on something. Type @ to mention pages or agents.`}
+        submitLabel="Start"
+        variant="card"
+        items={mentionItems}
+        autoFocus
+      />
     );
   }
 
@@ -1905,7 +1800,7 @@ export function AgentsWorkspace({
   }
 
   return (
-    <div className="flex flex-1 overflow-hidden">
+    <div className="flex flex-1 flex-row-reverse overflow-hidden">
       <div
         className="shrink-0 bg-background"
         style={{ width: conversationsPanel.width }}
@@ -1915,8 +1810,7 @@ export function AgentsWorkspace({
             {activeAgent ? (
               <button
                 onClick={() => openAgentSettings(activeAgent.slug)}
-                className="rounded-xl bg-muted/40 px-3 py-2 text-left transition-colors hover:bg-muted/60 transition-[margin] duration-200"
-                style={{ marginLeft: `var(--sidebar-toggle-offset, 0px)` }}
+                className="rounded-xl bg-muted/40 px-3 py-2 text-left transition-colors hover:bg-muted/60"
               >
                 <h3 className="text-[14px] font-semibold">
                   {activeAgent.name}
@@ -1927,8 +1821,7 @@ export function AgentsWorkspace({
               </button>
             ) : (
               <div
-                className="rounded-xl bg-muted/40 px-3 py-2 transition-[margin] duration-200"
-                style={{ marginLeft: `var(--sidebar-toggle-offset, 0px)` }}
+                className="rounded-xl bg-muted/40 px-3 py-2"
               >
                 <h3 className="text-[14px] font-semibold">All agents</h3>
                 <p className="text-[11px] text-muted-foreground">
@@ -3187,151 +3080,50 @@ export function AgentsWorkspace({
       {/* Quick Send popup */}
       {quickSendAgent ? (() => {
         const targetAgent = agents.find((a) => a.slug === quickSendAgent) || null;
+        submitTargetRef.current = quickSendAgent;
+        const closeQuickSend = () => {
+          setQuickSendAgent(null);
+          composer.reset();
+        };
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div
               className="absolute inset-0 bg-background/60 backdrop-blur-sm"
-              onClick={() => {
-                setQuickSendAgent(null);
-                setComposerInput("");
-                setMentionedPaths([]);
-                setShowMentions(false);
-              }}
+              onClick={closeQuickSend}
             />
-            <div className="relative z-10 flex w-full max-w-xl flex-col rounded-2xl border border-border bg-card shadow-2xl">
-              <div className="flex items-center gap-3 border-b border-border px-5 py-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-muted text-[22px]">
-                  {targetAgent?.emoji || "🤖"}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[14px] font-semibold text-foreground">
-                    {targetAgent?.name || quickSendAgent}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {targetAgent?.role || "Agent"}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuickSendAgent(null);
-                    setComposerInput("");
-                    setMentionedPaths([]);
-                    setShowMentions(false);
-                  }}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="relative flex flex-col">
-                <textarea
-                  ref={quickSendTextareaRef}
-                  value={composerInput}
-                  onChange={(event) =>
-                    handleComposerInput(
-                      event.target.value,
-                      event.target.selectionStart || event.target.value.length
-                    )
-                  }
-                  onKeyDown={(event) => {
-                    if (showMentions && filteredMentions.length > 0) {
-                      if (event.key === "ArrowDown") {
-                        event.preventDefault();
-                        setMentionIndex((current) => (current + 1) % filteredMentions.length);
-                      } else if (event.key === "ArrowUp") {
-                        event.preventDefault();
-                        setMentionIndex((current) =>
-                          current === 0 ? filteredMentions.length - 1 : current - 1
-                        );
-                      } else if (event.key === "Enter" && !event.shiftKey) {
-                        event.preventDefault();
-                        const page = filteredMentions[mentionIndex];
-                        if (page) insertMention(page.path, page.title);
-                      } else if (event.key === "Escape") {
-                        setShowMentions(false);
-                      }
-                      return;
-                    }
-
-                    if (event.key === "Escape") {
-                      setQuickSendAgent(null);
-                      setComposerInput("");
-                      setMentionedPaths([]);
-                      setShowMentions(false);
-                      return;
-                    }
-
-                    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                      event.preventDefault();
-                      void submitConversation(quickSendAgent);
-                    }
-                  }}
-                  placeholder={`Ask ${targetAgent?.name || quickSendAgent} to work on something. Type @ to attach a page as context.`}
-                  style={{ minHeight: "120px", maxHeight: "300px" }}
-                  className="w-full resize-none overflow-y-auto bg-transparent px-5 pt-4 pb-2 text-[13px] text-foreground caret-foreground outline-none placeholder:text-muted-foreground/60"
-                />
-
-                {mentionedPaths.length > 0 ? (
-                  <div className="flex flex-wrap gap-2 px-5 pb-2">
-                    {mentionedPaths.map((path) => (
-                      <span
-                        key={path}
-                        className="group inline-flex items-center gap-0.5 rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground"
-                      >
-                        @{makePageContextLabel(path, allPages)}
-                        <button
-                          onClick={() =>
-                            setMentionedPaths((current) => current.filter((entry) => entry !== path))
-                          }
-                          className="ml-0.5 inline-flex h-3.5 w-0 items-center justify-center overflow-hidden rounded-full opacity-0 transition-all duration-150 group-hover:w-3.5 group-hover:opacity-100 hover:bg-foreground/10"
-                        >
-                          <X className="h-2.5 w-2.5" />
-                        </button>
-                      </span>
-                    ))}
+            <div className="relative z-10 w-full max-w-xl">
+              <ComposerInput
+                composer={composer}
+                placeholder={`Ask ${targetAgent?.name || quickSendAgent} to work on something. Type @ to mention pages or agents.`}
+                submitLabel="Send"
+                variant="card"
+                items={mentionItems}
+                autoFocus
+                minHeight="120px"
+                maxHeight="300px"
+                header={
+                  <div className="flex items-center gap-3 border-b border-border px-5 py-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-muted text-[22px]">
+                      {targetAgent?.emoji || "\uD83E\uDD16"}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[14px] font-semibold text-foreground">
+                        {targetAgent?.name || quickSendAgent}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {targetAgent?.role || "Agent"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={closeQuickSend}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
-                ) : null}
-
-                {showMentions && filteredMentions.length > 0 ? (
-                  <div className="absolute inset-x-0 bottom-full z-20 mb-2 max-h-[280px] overflow-y-auto rounded-xl border border-border bg-popover p-1 shadow-lg">
-                    {filteredMentions.slice(0, 6).map((page, index) => (
-                      <button
-                        key={page.path}
-                        onClick={() => insertMention(page.path, page.title)}
-                        className={cn(
-                          "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12px]",
-                          index === mentionIndex
-                            ? "bg-accent text-foreground"
-                            : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                        )}
-                      >
-                        <span className="truncate">{page.title}</span>
-                        <span className="ml-3 truncate text-[11px] text-muted-foreground">
-                          {page.path}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-
-                <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3">
-                  <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                    <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">⌘</kbd>
-                    <span>+</span>
-                    <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">↵</kbd>
-                  </div>
-                  <Button
-                    className="h-8 gap-2 text-xs"
-                    onClick={() => void submitConversation(quickSendAgent)}
-                    disabled={submitting || !composerInput.trim()}
-                  >
-                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    Send
-                  </Button>
-                </div>
-              </div>
+                }
+              />
             </div>
           </div>
         );

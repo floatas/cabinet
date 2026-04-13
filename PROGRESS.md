@@ -1,5 +1,15 @@
 # Progress
 
+[2026-04-13] Composer hint bar: moved quick action chips below the composer on the home screen. Added grey hints below all composer cards — "use @ to mention" on the left and "Shift + Enter new line" on the right (responsive, hidden on small screens). Send button stays inside the card. Also added hints to cabinet-specific page composer (cabinet-view.tsx) and standardized its keyboard to Shift+Enter for newline.
+
+[2026-04-13] Unified composer component: Created shared `useComposer` hook and `ComposerInput` component that replaces 4 duplicate input implementations (home screen, agent workspace panel + quick-send popup, AI panel editor chat, task board). All surfaces now support `@` mentions for both pages and agents in a single unified dropdown with grouped sections. The "Add Inbox Task" dialog was redesigned from a rigid form (title/description/priority fields) into a conversational composer. Extracted shared `flattenTree` and `makePageContextLabel` into `src/lib/tree-utils.ts`. Submit behavior is Enter to send, Shift+Enter for newline across all surfaces.
+
+[2026-04-13] CEO operating review: surveyed all cabinets, confirmed Option A (activate marketing this week), answered CFO data questions (pricing $4.99/mo, burn ~$12K/mo, 60/40 organic/paid split), set April 26 check-in criteria, flagged COO/DevOps overlap and CEO brief/review overlap, introduced decision-deadline process fix for blockers. Updated company/operations and company/goals.
+
+[2026-04-13] CEO weekly operating review (scheduled job): Full cross-cabinet review covering root + app-development + marketing/tiktok + marketing/reddit. Wins: DevOps sprint plan, CTO RT-4 ownership, CFO unit economics, COO financial risk tracking. Made Option A decision official for marketing activation with specific deadlines. Introduced Tuesday proof-of-life process fix. Saved to company/operations/index.md.
+
+[2026-04-13] DevOps agent: created weekly sprint plan for week of April 14 at backlog/sprint-2026-04-14. Priorities: ship 4 small stories (OB-2, OB-5, OB-6, PC-3), start OB-1 and OB-3, run first release as a dry run of the pipeline. Updated release checklist with actionable items and staged rollout plan for the first release.
+
 [2026-04-13] Removed legacy run-agent.sh script and its references from Electron packaging configs. The in-app agent system has superseded this manual bash loop approach.
 
 [2026-04-12] Cabinet view: moved visibility depth selector from a separate column to a subtle inline pill bar beneath stats (more grounded). Added Start All / Stop All / Restart All controls to the cabinet header bar, scoped to own-cabinet agents only (no sub-cabinets). Scheduler API now accepts optional cabinetPath to scope start-all/stop-all operations.
@@ -156,3 +166,7 @@
 [2026-04-10] Added notification sounds for task completion/failure toasts. Uses Web Audio API to synthesize tones — ascending chime for success, descending tone for failure. No audio files needed.
 
 [2026-04-13] COO heartbeat: posted Week of April 13 operating review at example-text-your-mom/company/operations. Added "Marketing Activated?" and "Financial Risk" columns per CFO request. Sent messages to CFO (confirming column addition), CEO (overdue items + activation checklist), and Product Manager (OB-3 resizing + OB-6 schema priority). Created concrete 5-step activation checklist for paused marketing cabinets.
+
+[2026-04-13] Separated chevron toggle from page navigation in sidebar tree nodes — clicking the chevron now only expands/collapses, clicking the label navigates.
+
+[2026-04-13] Agents page: moved conversations panel to the right side; added heartbeat schedule and job pills to each agent card in the org chart.

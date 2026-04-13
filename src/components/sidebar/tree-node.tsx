@@ -88,9 +88,6 @@ export function TreeNode({
   const title = node.frontmatter?.title || node.name;
 
   const handleClick = () => {
-    if (hasChildren) {
-      toggleExpand(node.path);
-    }
     selectPage(node.path);
     if (node.type === "cabinet") {
       loadPage(node.path);
@@ -230,12 +227,21 @@ export function TreeNode({
             style={{ paddingLeft: `${depth * 16 + 8}px` }}
           >
             {hasChildren ? (
-              <ChevronRight
-                className={cn(
-                  "h-3.5 w-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-150",
-                  isExpanded && "rotate-90"
-                )}
-              />
+              <span
+                role="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleExpand(node.path);
+                }}
+                className="shrink-0 flex items-center justify-center w-3.5 h-3.5 rounded hover:bg-accent"
+              >
+                <ChevronRight
+                  className={cn(
+                    "h-3.5 w-3.5 text-muted-foreground/70 transition-transform duration-150",
+                    isExpanded && "rotate-90"
+                  )}
+                />
+              </span>
             ) : (
               <span className="w-3.5" />
             )}
