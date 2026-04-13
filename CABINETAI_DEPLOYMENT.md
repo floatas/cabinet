@@ -227,45 +227,98 @@ npm install
 npm run build     # Produces dist/index.js via esbuild
 ```
 
-### Release
+### How a release works (step by step)
 
-The release script (`scripts/release.sh`) bumps versions in all three package.json files:
+One command bumps all versions, commits, tags, and pushes:
 
 ```bash
 ./scripts/release.sh patch   # or minor, major
 ```
 
-GitHub Actions (`.github/workflows/release.yml`) publishes on `vX.Y.Z` tags:
+**What `release.sh` does:**
 
-1. `release-assets` — Create GitHub release with manifest
-2. `publish-cli` — Publish `create-cabinet` to npm
-3. `publish-cabinetai` — Build and publish `cabinetai` to npm
-4. `electron-macos` — Build and publish desktop app
+1. Reads the current version from `package.json` (e.g., `0.2.12`)
+2. Calculates the next version (e.g., `0.2.13`)
+3. Bumps the `"version"` field in all three package.json files:
+   - `package.json` — the Cabinet app
+   - `cli/package.json` — `create-cabinet`
+   - `cabinetai/package.json` — `cabinetai`
+4. Runs `npm install --package-lock-only` to update the lockfile
+5. Regenerates `cabinet-release.json` with the new tag
+6. Commits: `Release v0.2.13`
+7. Creates git tag: `v0.2.13`
+8. Pushes commit and tag to `origin/main`
+
+**What GitHub Actions does (triggered by the `vX.Y.Z` tag):**
+
+| Job | What it publishes |
+|---|---|
+| `release-assets` | GitHub Release + `cabinet-release.json` artifact |
+| `publish-cli` | `create-cabinet@0.2.13` to npm |
+| `publish-cabinetai` | `cabinetai@0.2.13` to npm (builds with esbuild first) |
+| `electron-macos` | Signed macOS DMG + ZIP attached to the GitHub Release |
+
+**Verify after the tag ships:**
+
+```bash
+npm view create-cabinet version     # should show 0.2.13
+npm view cabinetai version          # should show 0.2.13
+gh release view v0.2.13 -R hilash/cabinet
+npx cabinetai --version             # should show 0.2.13
+```
 
 ### Version synchronization
 
-Three packages must stay in sync:
+Three packages must stay in lockstep:
 
-| File | Package |
-|---|---|
-| `package.json` | `cabinet` (the app) |
-| `cli/package.json` | `create-cabinet` |
-| `cabinetai/package.json` | `cabinetai` |
+| File | npm package | How version is used |
+|---|---|---|
+| `package.json` | `cabinet` (the app) | Source of truth. Release script reads from here. |
+| `cli/package.json` | `create-cabinet` | Published to npm. Delegates to `cabinetai`. |
+| `cabinetai/package.json` | `cabinetai` | Published to npm. Version injected at build time via esbuild `define` — no hardcoded strings in source. |
 
-The release script handles all three. The CLI version is injected at build time from `package.json` via esbuild `define`.
+The release script (`scripts/release.sh`) handles all three in one shot. Never bump versions manually — always use the script.
 
 ### Release manifest
 
-`cabinet-release.json` now includes:
+`cabinet-release.json` is generated per release and published as a GitHub Release asset. Clients poll it to check for updates:
+
+```
+https://github.com/hilash/cabinet/releases/latest/download/cabinet-release.json
+```
+
+Contents:
 
 ```json
 {
+  "manifestVersion": 1,
+  "version": "0.2.13",
+  "channel": "stable",
+  "gitTag": "v0.2.13",
+  "sourceTarballUrl": "https://github.com/hilash/cabinet/archive/refs/tags/v0.2.13.tar.gz",
   "npmPackage": "create-cabinet",
-  "createCabinetVersion": "0.2.12",
+  "createCabinetVersion": "0.2.13",
   "cabinetaiPackage": "cabinetai",
-  "cabinetaiVersion": "0.2.12"
+  "cabinetaiVersion": "0.2.13",
+  "electron": { "macos": { "zipAssetName": "Cabinet-darwin-arm64.zip", "dmgAssetName": "Cabinet.dmg" } }
 }
 ```
+
+The `cabinetai update` command fetches this manifest to determine if a newer app version is available.
+
+### Required GitHub secrets
+
+| Secret | Used by |
+|---|---|
+| `NPM_TOKEN` | `publish-cli` and `publish-cabinetai` jobs |
+| `APPLE_ID` | Electron notarization |
+| `APPLE_APP_PASSWORD` | Electron notarization |
+| `APPLE_TEAM_ID` | Electron notarization |
+| `APPLE_SIGN_IDENTITY` | Electron code signing |
+| `APPLE_CERTIFICATE` | Electron code signing |
+| `APPLE_CERTIFICATE_PASSWORD` | Electron code signing |
+
+`GITHUB_TOKEN` is provided automatically by GitHub Actions.
 
 ## Relationship: `create-cabinet` vs `cabinetai`
 
