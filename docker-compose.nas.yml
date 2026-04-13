@@ -16,7 +16,7 @@ services:
       - DOMAIN=192.168.0.162
       - CABINET_DATA_DIR=/data
       # Container reaches host daemon via Docker bridge gateway
-      - CABINET_DAEMON_URL=http://host.docker.internal:3001
+      - CABINET_DAEMON_URL=http://host.docker.internal:3005
       # Browser connects to daemon directly on LAN
-      - CABINET_PUBLIC_DAEMON_ORIGIN=ws://192.168.0.162:3001
+      - CABINET_PUBLIC_DAEMON_ORIGIN=ws://192.168.0.162:3005
       - TZ=Europe/Vilnius

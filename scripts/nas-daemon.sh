@@ -21,6 +21,7 @@ LOG_FILE="${CABINET_DIR}/daemon.log"
 PID_FILE="${CABINET_DIR}/daemon.pid"
 IMAGE="ghcr.io/floatas/cabinet:latest"
 COMPOSE_FILE="${CABINET_DIR}/docker-compose.yml"
+DAEMON_PORT=3005
 
 export PATH="/usr/local/bin:/opt/bin:$PATH"
 
@@ -82,9 +83,9 @@ cmd_start() {
   NAS_IP=${NAS_IP:-192.168.0.162}
 
   CABINET_DATA_DIR="$DATA_DIR" \
-  CABINET_DAEMON_PORT=3001 \
+  CABINET_DAEMON_PORT="${DAEMON_PORT}" \
   CABINET_APP_ORIGIN="http://127.0.0.1:3002,http://${NAS_IP}:3002" \
-  CABINET_PUBLIC_DAEMON_ORIGIN="ws://${NAS_IP}:3001" \
+  CABINET_PUBLIC_DAEMON_ORIGIN="ws://${NAS_IP}:${DAEMON_PORT}" \
   PATH="/usr/local/bin:/opt/bin:$HOME/.local/bin:$PATH" \
   NODE_ENV=production \
     nohup /usr/local/bin/node "${DAEMON_DIR}/node_modules/tsx/dist/cli.mjs" server/cabinet-daemon.ts \
@@ -126,7 +127,7 @@ cmd_restart() {
 cmd_status() {
   if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
     echo "Daemon is running (PID $(cat "$PID_FILE"))"
-    curl -s "http://127.0.0.1:3001/health" 2>/dev/null && echo "" || echo "Health check failed"
+    curl -s "http://127.0.0.1:${DAEMON_PORT}/health" 2>/dev/null && echo "" || echo "Health check failed"
   else
     echo "Daemon is not running"
   fi
