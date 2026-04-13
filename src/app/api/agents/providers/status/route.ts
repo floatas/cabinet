@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDaemonUrl } from "@/lib/runtime/runtime-config";
+import { getOrCreateDaemonToken } from "@/lib/agents/daemon-auth";
 
 interface CachedStatus {
   providers: { id: string; name: string; available: boolean; authenticated: boolean }[];
@@ -18,7 +19,9 @@ export async function GET() {
     }
 
     // Proxy to daemon — it runs on the host where CLI tools are actually installed
+    const token = await getOrCreateDaemonToken();
     const res = await fetch(`${getDaemonUrl()}/providers/status`, {
+      headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(10_000),
     });
 

@@ -75,6 +75,10 @@ cmd_start() {
     exit 1
   fi
 
+  # Fix permissions on data files owned by Docker (root) so daemon can read them
+  sudo find "${DATA_DIR}/.agents/.runtime" -type f -exec chmod a+r {} \; 2>/dev/null || true
+  sudo find "${DATA_DIR}/.agents" -maxdepth 1 -type d -exec chmod a+rx {} \; 2>/dev/null || true
+
   log "Starting Cabinet daemon..."
 
   cd "$DAEMON_DIR"
