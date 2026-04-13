@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { GitBranch, RefreshCw, Check, CloudDownload, Star, X } from "lucide-react";
+import { GitBranch, RefreshCw, Check, CloudDownload, Star, X, GitCommit } from "lucide-react";
 import { useCabinetUpdate } from "@/hooks/use-cabinet-update";
 import { useEditorStore } from "@/stores/editor-store";
 import { useTreeStore } from "@/stores/tree-store";
@@ -47,6 +47,7 @@ export function StatusBar() {
   const loadTree = useTreeStore((s) => s.loadTree);
   const setSection = useAppStore((s) => s.setSection);
   const [uncommitted, setUncommitted] = useState(0);
+  const [committing, setCommitting] = useState(false);
   const [pullStatus, setPullStatus] = useState<"idle" | "pulling" | "pulled" | "up-to-date" | "error">("idle");
   const [pulling, setPulling] = useState(false);
   const [githubStars, setGithubStars] = useState(GITHUB_STARS_FALLBACK);
@@ -138,6 +139,25 @@ export function StatusBar() {
       // ignore
     }
   }, []);
+
+  const commitAll = useCallback(async () => {
+    if (committing || uncommitted === 0) return;
+    setCommitting(true);
+    try {
+      const res = await fetch("/api/git/commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "KB update" }),
+      });
+      if (res.ok) {
+        setUncommitted(0);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setCommitting(false);
+    }
+  }, [committing, uncommitted]);
 
   const pullAndRefresh = useCallback(async () => {
     if (pulling) return;
@@ -467,6 +487,18 @@ export function StatusBar() {
           <GitBranch className="h-3 w-3" />
           {uncommitted > 0 ? `${uncommitted} uncommitted` : "All committed"}
         </span>
+        {uncommitted > 0 && (
+          <button
+            onClick={commitAll}
+            disabled={committing}
+            aria-label="Commit all changes"
+            className="flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-1"
+            title="Commit all changes"
+          >
+            <GitCommit className={`h-3 w-3 ${committing ? "animate-pulse" : ""}`} />
+            {committing ? "Committing..." : "Commit"}
+          </button>
+        )}
         <button
           onClick={pullAndRefresh}
           disabled={pulling}
