@@ -8,13 +8,22 @@ import remarkRehype from "remark-rehype";
 import rehypeStringify from "rehype-stringify";
 import { REGISTRY_TEMPLATES } from "@/lib/registry/registry-manifest";
 
+function stripWikiLinks(markdown: string): string {
+  // [[path/to/page]] → last segment as plain text
+  return markdown.replace(/\[\[([^\]]+)\]\]/g, (_, inner: string) => {
+    const segments = inner.split("/");
+    return segments[segments.length - 1];
+  });
+}
+
 async function markdownToHtml(markdown: string): Promise<string> {
+  const cleaned = stripWikiLinks(markdown);
   const result = await unified()
     .use(remarkParse)
     .use(remarkGfm)
     .use(remarkRehype)
     .use(rehypeStringify)
-    .process(markdown);
+    .process(cleaned);
   return String(result);
 }
 

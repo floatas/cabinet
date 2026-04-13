@@ -570,7 +570,7 @@ html[data-custom-theme] .font-logo,
 /* ── Registry prose (markdown viewer in registry detail About section) ── */
 .registry-prose {
   font-size: 0.875rem;
-  line-height: 1.7;
+  line-height: 1.8;
   color: var(--prose-body, #6b5b4e);
 }
 .registry-prose h1,
@@ -578,27 +578,37 @@ html[data-custom-theme] .font-logo,
 .registry-prose h3,
 .registry-prose h4 {
   color: var(--prose-heading, #3b2f2f);
-  font-weight: 600;
-  margin-top: 1.5em;
+  font-weight: 700;
+  margin-top: 2em;
   margin-bottom: 0.5em;
   line-height: 1.3;
 }
-.registry-prose h1 { font-size: 1.25rem; }
-.registry-prose h2 { font-size: 1.1rem; }
-.registry-prose h3 { font-size: 1rem; }
-.registry-prose p { margin-top: 0; margin-bottom: 0.75em; }
-.registry-prose ul,
-.registry-prose ol {
-  padding-left: 1.5em;
-  margin-bottom: 0.75em;
+.registry-prose h1 { font-size: 1.3rem; }
+.registry-prose h2 { font-size: 1.05rem; letter-spacing: -0.01em; }
+.registry-prose h3 { font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.registry-prose p { margin-top: 0; margin-bottom: 1em; }
+.registry-prose ul {
+  list-style-type: disc;
+  padding-left: 1.4em;
+  margin-bottom: 1em;
 }
-.registry-prose li { margin-bottom: 0.25em; }
+.registry-prose ol {
+  list-style-type: decimal;
+  padding-left: 1.4em;
+  margin-bottom: 1em;
+}
+.registry-prose li {
+  margin-bottom: 0.4em;
+  padding-left: 0.15em;
+}
+.registry-prose ul li::marker { color: var(--prose-link, #8b5e3c); }
 .registry-prose code {
   font-size: 0.8125rem;
   font-family: var(--font-mono, monospace);
   background: var(--prose-code-bg, #f3ede4);
-  padding: 0.15em 0.4em;
+  padding: 0.15em 0.45em;
   border-radius: 4px;
+  color: var(--prose-heading, #3b2f2f);
 }
 .registry-prose pre {
   background: var(--prose-code-bg, #f3ede4);
