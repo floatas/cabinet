@@ -603,7 +603,7 @@ function ConversationRow({
 
       {/* Action buttons — float left of trigger icon, transparent container, each button has its own bg */}
       {hasActions && (
-        <div className="absolute inset-y-0 right-[50px] z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="absolute inset-y-0 right-[100px] z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
           {onStop && (
             <button
               onClick={(e) => { e.stopPropagation(); onStop(); }}
