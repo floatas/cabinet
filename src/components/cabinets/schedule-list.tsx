@@ -95,8 +95,13 @@ export function ScheduleList({ agents, jobs, onJobClick, onHeartbeatClick }: Sch
             key={item.id}
             type="button"
             onClick={() => {
-              if (item.type === "job" && item.jobRef && item.agentRef && onJobClick) {
-                onJobClick(item.jobRef, item.agentRef);
+              if (item.type === "job" && item.jobRef && onJobClick) {
+                const agent = item.agentRef ?? ({
+                  slug: item.agentSlug,
+                  name: item.agentName,
+                  emoji: item.agentEmoji,
+                } as CabinetAgentSummary);
+                onJobClick(item.jobRef, agent);
               } else if (item.type === "heartbeat" && item.agentRef && onHeartbeatClick) {
                 onHeartbeatClick(item.agentRef);
               }
