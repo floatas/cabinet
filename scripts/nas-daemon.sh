@@ -78,10 +78,13 @@ cmd_start() {
 
   cd "$DAEMON_DIR"
 
+  NAS_IP=$(ip addr show eth0 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
+  NAS_IP=${NAS_IP:-192.168.0.162}
+
   CABINET_DATA_DIR="$DATA_DIR" \
   CABINET_DAEMON_PORT=3001 \
-  CABINET_APP_ORIGIN="http://127.0.0.1:3002" \
-  CABINET_PUBLIC_DAEMON_ORIGIN="ws://$(hostname -I | awk '{print $1}'):3001" \
+  CABINET_APP_ORIGIN="http://127.0.0.1:3002,http://${NAS_IP}:3002" \
+  CABINET_PUBLIC_DAEMON_ORIGIN="ws://${NAS_IP}:3001" \
   PATH="/usr/local/bin:/opt/bin:$HOME/.local/bin:$PATH" \
   NODE_ENV=production \
     nohup /usr/local/bin/node "${DAEMON_DIR}/node_modules/tsx/dist/cli.mjs" server/cabinet-daemon.ts \
