@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { providerRegistry } from "@/lib/agents/provider-registry";
+import { getDaemonUrl } from "@/lib/runtime/runtime-config";
 
 interface CachedStatus {
   providers: { id: string; name: string; available: boolean; authenticated: boolean }[];
@@ -17,24 +17,16 @@ export async function GET() {
       return NextResponse.json(cachedResult);
     }
 
-    const providers = providerRegistry.listAll();
-    const results = await Promise.all(
-      providers.map(async (p) => {
-        const status = await p.healthCheck();
-        return {
-          id: p.id,
-          name: p.name,
-          available: status.available,
-          authenticated: status.authenticated,
-        };
-      }),
-    );
+    // Proxy to daemon — it runs on the host where CLI tools are actually installed
+    const res = await fetch(`${getDaemonUrl()}/providers/status`, {
+      signal: AbortSignal.timeout(10_000),
+    });
 
-    const response: CachedStatus = {
-      providers: results,
-      anyReady: results.some((p) => p.available && p.authenticated),
-    };
+    if (!res.ok) {
+      throw new Error(`Daemon returned ${res.status}`);
+    }
 
+    const response: CachedStatus = await res.json();
     cachedResult = response;
     cachedAt = now;
 

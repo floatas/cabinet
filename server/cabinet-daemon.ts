@@ -856,6 +856,27 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Provider status — checks CLI availability from the host (where CLIs are installed)
+  if (url.pathname === "/providers/status" && req.method === "GET") {
+    try {
+      const { providerRegistry: reg } = await import("../src/lib/agents/provider-registry.js");
+      const providers = reg.listAll();
+      const results = await Promise.all(
+        providers.map(async (p) => {
+          const s = await p.healthCheck();
+          return { id: p.id, name: p.name, available: s.available, authenticated: s.authenticated, version: s.version, error: s.error };
+        })
+      );
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ providers: results, anyReady: results.some((p) => p.available && p.authenticated) }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: message }));
+    }
+    return;
+  }
+
   // Health check
   if (url.pathname === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
