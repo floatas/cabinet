@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 set -e
 
 # Mark /data as safe for git
@@ -17,12 +17,6 @@ if [ ! -d /data/.git ]; then
   cd /app
 fi
 
-# Start both processes
-echo "Starting Cabinet..."
-node server.js &
-NEXT_PID=$!
-node /app/node_modules/tsx/dist/cli.mjs server/cabinet-daemon.ts &
-DAEMON_PID=$!
-
-# Wait for either to exit
-wait -n $NEXT_PID $DAEMON_PID 2>/dev/null || wait $NEXT_PID
+# Start Next.js only — daemon runs on the host
+echo "Starting Cabinet (web only)..."
+exec node server.js

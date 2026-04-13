@@ -20,7 +20,7 @@ FROM node:20-slim AS runner
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git bash \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production
@@ -31,9 +31,12 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
-# Daemon needs full node_modules (tsx, native modules, and their deps)
+# Daemon files — kept in image for extraction to host via `docker cp`
 COPY --from=builder /app/server ./server
+COPY --from=builder /app/src ./src
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
 
 # Agent library templates
 COPY --from=builder /app/data/.agents/.library ./data-defaults/.agents/.library
@@ -45,7 +48,7 @@ COPY --from=builder /app/data/index.md ./data-defaults/index.md
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 
-EXPOSE 3000 3001
+EXPOSE 3000
 
 VOLUME /data
 
