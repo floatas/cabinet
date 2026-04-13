@@ -20,6 +20,7 @@ export interface UseComposerOptions {
   items?: MentionableItem[];
   onSubmit: (payload: ComposerPayload) => void | Promise<void>;
   disabled?: boolean;
+  initialMentionedAgents?: string[];
 }
 
 export interface UseComposerReturn {
@@ -43,10 +44,12 @@ export function useComposer({
   items = [],
   onSubmit,
   disabled = false,
+  initialMentionedAgents,
 }: UseComposerOptions): UseComposerReturn {
+  const initialAgentsRef = useRef(initialMentionedAgents ?? []);
   const [input, setInput] = useState("");
   const [mentionedPaths, setMentionedPaths] = useState<string[]>([]);
-  const [mentionedAgents, setMentionedAgents] = useState<string[]>([]);
+  const [mentionedAgents, setMentionedAgents] = useState<string[]>(initialAgentsRef.current);
   const [showDropdown, setShowDropdown] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -87,6 +90,8 @@ export function useComposer({
       );
       setMentionedAgents((current) =>
         current.filter((slug) => {
+          // Never auto-remove agents that were pre-selected as defaults
+          if (initialAgentsRef.current.includes(slug)) return true;
           const label = findLabelForMention("agent", slug);
           return value.includes(`@${label}`);
         })
@@ -161,7 +166,7 @@ export function useComposer({
   const reset = useCallback(() => {
     setInput("");
     setMentionedPaths([]);
-    setMentionedAgents([]);
+    setMentionedAgents(initialAgentsRef.current);
     setShowDropdown(false);
     setMentionQuery("");
     setMentionIndex(0);

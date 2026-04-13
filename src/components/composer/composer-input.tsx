@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { Send, Loader2 } from "lucide-react";
+import { Send, Loader2, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { MentionDropdown } from "./mention-dropdown";
@@ -22,6 +22,13 @@ export interface ComposerInputProps {
   footer?: React.ReactNode;
   variant?: "card" | "inline";
   items?: MentionableItem[];
+  secondaryAction?: {
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
+    loading?: boolean;
+  };
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 }
 
 export function ComposerInput({
@@ -38,6 +45,8 @@ export function ComposerInput({
   footer,
   variant = "card",
   items = [],
+  secondaryAction,
+  onKeyDown,
 }: ComposerInputProps) {
   useEffect(() => {
     if (autoFocus) {
@@ -69,7 +78,13 @@ export function ComposerInput({
             ref={composer.textareaRef}
             value={composer.input}
             onChange={composer.handleChange}
-            onKeyDown={composer.handleKeyDown}
+            onKeyDown={(e) => {
+              if (onKeyDown) {
+                onKeyDown(e);
+                if (e.defaultPrevented) return;
+              }
+              composer.handleKeyDown(e);
+            }}
             placeholder={placeholder}
             disabled={isDisabled}
             style={{ minHeight, maxHeight }}
@@ -84,7 +99,22 @@ export function ComposerInput({
           onRemove={composer.removeMention}
         />
 
-        <div className="flex items-center justify-end px-4 pb-3">
+        <div className="flex items-center justify-end gap-2 px-4 pb-3">
+          {secondaryAction && (
+            <Button
+              variant="outline"
+              className="h-8 gap-2 text-xs"
+              onClick={secondaryAction.onClick}
+              disabled={isDisabled || !composer.input.trim() || secondaryAction.disabled}
+            >
+              {secondaryAction.loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4" />
+              )}
+              {secondaryAction.label}
+            </Button>
+          )}
           <Button
             className="h-8 gap-2 text-xs"
             onClick={() => void composer.submit()}
