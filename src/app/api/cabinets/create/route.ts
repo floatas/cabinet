@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
-import yaml from "js-yaml";
 import {
   resolveContentPath,
   sanitizeFilename,
 } from "@/lib/storage/path-utils";
+import { scaffoldCabinet } from "@/lib/storage/cabinet-scaffold";
 import {
   MANDATORY_AGENT_SLUGS,
   mergeMandatoryAgentSlugs,
@@ -61,44 +61,14 @@ export async function POST(req: NextRequest) {
       // Good — doesn't exist
     }
 
-    // Create directory structure
+    // Create cabinet directory and bootstrap structure
     await fs.mkdir(targetDir, { recursive: true });
-    await fs.mkdir(path.join(targetDir, ".agents"), { recursive: true });
-    await fs.mkdir(path.join(targetDir, ".jobs"), { recursive: true });
-    await fs.mkdir(path.join(targetDir, ".cabinet-state"), { recursive: true });
-
-    // Determine kind based on whether it's nested
     const kind = parentPath ? "child" : "root";
-
-    // Write .cabinet manifest
-    const manifest = {
-      schemaVersion: 1,
-      id: `${slug}-${kind}`,
+    await scaffoldCabinet(targetDir, {
       name: name.trim(),
       kind,
-      version: "0.1.0",
-      description: description || `${name.trim()} cabinet.`,
-      entry: "index.md",
-    };
-    await fs.writeFile(
-      path.join(targetDir, ".cabinet"),
-      yaml.dump(manifest, { lineWidth: -1 }),
-      "utf-8"
-    );
-
-    // Write index.md
-    const now = new Date().toISOString();
-    const indexContent = [
-      "---",
-      `title: "${name.trim()}"`,
-      `created: "${now}"`,
-      `modified: "${now}"`,
-      "---",
-      "",
-      `# ${name.trim()}`,
-      "",
-    ].join("\n");
-    await fs.writeFile(path.join(targetDir, "index.md"), indexContent, "utf-8");
+      description,
+    });
 
     // Copy selected agents from library
     for (const agentSlug of normalizedSelectedAgents) {

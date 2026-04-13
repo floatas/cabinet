@@ -1,5 +1,7 @@
 # Progress
 
+[2026-04-14] Extracted scaffoldCabinet() to src/lib/storage/cabinet-scaffold.ts — unified duplicated cabinet bootstrap logic (dirs, .cabinet manifest, index.md) previously spread across onboarding/setup and cabinets/create API routes. Both routes now call the shared utility.
+
 [2026-04-14] Fixed onboarding to comply with cabinet protocol: `POST /api/onboarding/setup` now creates the root `.cabinet` YAML manifest (schemaVersion, id, name, kind, version, description, entry), `index.md` entry point, and `.cabinet-state/` runtime directory — all three were previously missing from root cabinet initialization.
 
 [2026-04-13] Fix job cards in ScheduleList not opening when agent lookup fails — removed agentRef guard from click handler, falls back to slug/name/emoji already on the item.

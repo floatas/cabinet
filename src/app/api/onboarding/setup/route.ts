@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import path from "path";
 import fs from "fs/promises";
 import matter from "gray-matter";
-import yaml from "js-yaml";
 import { DATA_DIR } from "@/lib/storage/path-utils";
+import { scaffoldCabinet } from "@/lib/storage/cabinet-scaffold";
 import {
   MANDATORY_AGENT_SLUGS,
   mergeMandatoryAgentSlugs,
@@ -62,45 +62,14 @@ export async function POST(req: NextRequest) {
     );
 
     // 2. Bootstrap root cabinet structure (cabinet protocol compliance)
-    // .cabinet manifest
-    const cabinetManifest = {
-      schemaVersion: 1,
-      id: `${answers.companyName.toLowerCase().replace(/\s+/g, "-")}-root`,
+    await scaffoldCabinet(DATA_DIR, {
       name: answers.companyName,
       kind: "root",
-      version: "0.1.0",
-      description: answers.description || `${answers.companyName} cabinet.`,
-      entry: "index.md",
-    };
-    await fs.writeFile(
-      path.join(DATA_DIR, ".cabinet"),
-      yaml.dump(cabinetManifest, { lineWidth: -1 }),
-      "utf-8"
-    ).catch(() => {}); // Don't overwrite if already exists
-
-    // index.md entry point
-    const now = new Date().toISOString();
-    const indexContent = [
-      "---",
-      `title: "${answers.companyName}"`,
-      `created: "${now}"`,
-      `modified: "${now}"`,
-      answers.goals ? `tags:\n  - company` : "tags:\n  - company",
-      "---",
-      "",
-      `# ${answers.companyName}`,
-      "",
-      answers.description || "",
-      "",
-    ].join("\n");
-    await fs.writeFile(
-      path.join(DATA_DIR, "index.md"),
-      indexContent,
-      { flag: "wx" } // Don't overwrite existing index
-    ).catch(() => {});
-
-    // .cabinet-state/ runtime directory
-    await fs.mkdir(path.join(DATA_DIR, ".cabinet-state"), { recursive: true });
+      description: answers.description,
+      body: answers.description,
+      tags: ["company"],
+      skipExisting: true,
+    });
 
     // 3. Mark onboarding as complete
     await fs.writeFile(

@@ -40,6 +40,7 @@ function createCabinet(name: string): void {
   ensureDir(targetDir);
   ensureDir(path.join(targetDir, ".agents"));
   ensureDir(path.join(targetDir, ".jobs"));
+  ensureDir(path.join(targetDir, ".cabinet-state"));
 
   // Write .cabinet manifest
   const manifest: CabinetManifest = {
