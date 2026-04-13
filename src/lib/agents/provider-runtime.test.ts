@@ -63,12 +63,18 @@ test("Codex provider builds the expected launch arguments", () => {
   assert.equal(interactiveSession.initialPrompt, undefined);
 });
 
-test("Claude provider keeps the prompt injection session contract", () => {
+test("Claude provider uses one-shot mode for agent sessions", () => {
   const session = claudeCodeProvider.buildSessionInvocation?.("Review this", process.cwd());
   assert.ok(session);
-  assert.deepEqual(session.args, ["--dangerously-skip-permissions"]);
-  assert.equal(session.initialPrompt, "Review this");
-  assert.equal(session.readyStrategy, "claude");
+  assert.deepEqual(session.args, [
+    "--dangerously-skip-permissions",
+    "-p",
+    "Review this",
+    "--output-format",
+    "text",
+  ]);
+  assert.equal(session.initialPrompt, undefined);
+  assert.equal(session.readyStrategy, undefined);
 });
 
 test("provider runtime resolves launch specs through registered providers", async (t) => {

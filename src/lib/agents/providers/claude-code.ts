@@ -48,11 +48,12 @@ export const claudeCodeProvider: AgentProvider = {
         args: ["--login"],
       };
     }
+    // Agent conversation mode: use one-shot (-p) mode in the PTY.
+    // Claude's interactive REPL exits silently via node-pty on some Linux systems,
+    // so the "wait for ❯ then inject prompt" strategy never fires. One-shot mode works.
     return {
       command: this.command || "claude",
-      args: ["--dangerously-skip-permissions"],
-      initialPrompt: prompt.trim(),
-      readyStrategy: "claude" as const,
+      args: ["--dangerously-skip-permissions", "-p", prompt.trim(), "--output-format", "text"],
     };
   },
 
