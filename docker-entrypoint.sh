@@ -1,6 +1,10 @@
 #!/bin/sh
 set -e
 
+# Use group-writable umask so files created by this container (running as root)
+# can be written by the host daemon user (floatas, in the same group).
+umask 002
+
 # Mark /data as safe for git
 git config --global --add safe.directory /data
 

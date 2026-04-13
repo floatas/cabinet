@@ -20,4 +20,3 @@ services:
       # Browser connects to daemon directly on LAN
       - CABINET_PUBLIC_DAEMON_ORIGIN=ws://192.168.0.162:3005
       - TZ=Europe/Vilnius
-    user: "1026:100"  # floatas:users — ensures data files are writable by the host daemon
