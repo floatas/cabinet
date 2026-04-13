@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { GitBranch, RefreshCw, Check, CloudDownload, Star, X } from "lucide-react";
+import { GitBranch, RefreshCw, Check, CloudDownload, Star, X, ArrowRight } from "lucide-react";
 import { useCabinetUpdate } from "@/hooks/use-cabinet-update";
 import { useEditorStore } from "@/stores/editor-store";
 import { useTreeStore } from "@/stores/tree-store";
 import { useAppStore } from "@/stores/app-store";
+import { useAIPanelStore } from "@/stores/ai-panel-store";
 
 const DISCORD_SUPPORT_URL = "https://discord.gg/hJa5TRTbTH";
 const GITHUB_REPO_URL = "https://github.com/hilash/cabinet";
@@ -75,7 +76,50 @@ function StarExplosion() {
 export function StatusBar() {
   const { saveStatus, currentPath } = useEditorStore();
   const loadTree = useTreeStore((s) => s.loadTree);
+  const selectedPath = useTreeStore((s) => s.selectedPath);
+  const section = useAppStore((s) => s.section);
   const setSection = useAppStore((s) => s.setSection);
+  const { open, addEditorSession } = useAIPanelStore();
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiSubmitting, setAiSubmitting] = useState(false);
+
+  const showAIPill = section.type === "page" && !!selectedPath;
+
+  const handleAISubmit = async () => {
+    if (!aiPrompt.trim() || !selectedPath || aiSubmitting) return;
+    const message = aiPrompt.trim();
+    setAiPrompt("");
+    setAiSubmitting(true);
+    open();
+    try {
+      const response = await fetch("/api/agents/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: "editor",
+          pagePath: selectedPath,
+          userMessage: message,
+          mentionedPaths: [],
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const conversation = data.conversation as { id: string; title: string };
+        addEditorSession({
+          id: conversation.id,
+          sessionId: conversation.id,
+          pagePath: selectedPath,
+          userMessage: message,
+          prompt: conversation.title,
+          timestamp: Date.now(),
+          status: "running",
+          reconnect: true,
+        });
+      }
+    } finally {
+      setAiSubmitting(false);
+    }
+  };
   const [uncommitted, setUncommitted] = useState(0);
   const [pullStatus, setPullStatus] = useState<"idle" | "pulling" | "pulled" | "up-to-date" | "error">("idle");
   const [pulling, setPulling] = useState(false);
@@ -267,7 +311,34 @@ export function StatusBar() {
   }, [githubStars]);
 
   return (
-    <div className="flex items-center justify-between px-3 py-1 border-t border-border text-[11px] text-muted-foreground/60 bg-background">
+    <div className="relative flex items-center justify-between px-3 py-1 border-t border-border text-[11px] text-muted-foreground/60 bg-background">
+      {/* Center: AI edit pill */}
+      {showAIPill && (
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center pointer-events-auto">
+          <div className="flex items-center rounded-full border border-border/50 bg-muted/30 px-2.5 py-0.5 gap-1.5 focus-within:border-border/80 focus-within:bg-muted/60 transition-colors w-56">
+            <input
+              type="text"
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void handleAISubmit();
+                }
+              }}
+              placeholder="How to edit this page?"
+              className="flex-1 bg-transparent text-[11px] text-foreground placeholder:text-muted-foreground/40 outline-none min-w-0"
+            />
+            <button
+              onClick={() => void handleAISubmit()}
+              disabled={!aiPrompt.trim() || aiSubmitting}
+              className="shrink-0 text-muted-foreground/30 hover:text-muted-foreground disabled:opacity-20 transition-colors cursor-pointer"
+            >
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+        </div>
+      )}
       <div className="flex min-w-0 items-center gap-3">
         <div className="relative">
           <button
