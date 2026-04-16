@@ -38,8 +38,6 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
 
-# Agent library templates
-COPY --from=builder /app/data/.agents/.library ./data-defaults/.agents/.library
 # Default getting-started pages
 COPY --from=builder /app/data/getting-started ./data-defaults/getting-started
 COPY --from=builder /app/data/index.md ./data-defaults/index.md
