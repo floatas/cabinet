@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import matter from "gray-matter";
 import yaml from "js-yaml";
+import { CABINET_LINK_META_CANDIDATES } from "@/lib/cabinets/files";
 import type { PageData, FrontMatter } from "@/types";
 import { resolveContentPath } from "./path-utils";
 import {
@@ -31,7 +32,7 @@ export async function readPage(virtualPath: string): Promise<PageData> {
   } else if (await fileExists(mdPath)) {
     filePath = mdPath;
   } else if (await fileExists(resolved)) {
-    // Could be a raw file or a directory — check for .cabinet.yaml fallback
+    // Could be a raw file or a directory — check for linked-folder metadata fallback.
     const stat = await fs.stat(resolved);
     if (stat.isFile()) {
       filePath = resolved;
@@ -56,10 +57,12 @@ export async function readPage(virtualPath: string): Promise<PageData> {
     };
   }
 
-  // Fallback for linked directories without index.md — read .cabinet.yaml
-  const cabinetYaml = path.join(resolved, ".cabinet.yaml");
-  if (await fileExists(cabinetYaml)) {
-    const raw = await readFileContent(cabinetYaml);
+  // Fallback for linked directories without index.md.
+  for (const filename of CABINET_LINK_META_CANDIDATES) {
+    const cabinetMetaPath = path.join(resolved, filename);
+    if (!(await fileExists(cabinetMetaPath))) continue;
+
+    const raw = await readFileContent(cabinetMetaPath);
     const meta = yaml.load(raw) as Record<string, unknown>;
     return {
       path: virtualPath,

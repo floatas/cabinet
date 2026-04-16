@@ -42,12 +42,29 @@ export interface AgentTask {
   updatedAt: string;
   completedAt?: string;
   result?: string;
+  cabinetPath?: string;
+  linkedConversationId?: string;
+  linkedConversationCabinetPath?: string;
+  startedAt?: string;
+}
+
+export interface HumanInboxDraft {
+  id: string;
+  title: string;
+  description: string;
+  priority: number;
+  createdAt: string;
+  updatedAt: string;
+  cabinetPath?: string;
+  assignedAgentSlug?: string;
+  assignedAgentCabinetPath?: string;
 }
 
 export type AgentType = "lead" | "specialist" | "support";
 
 /** Lightweight agent summary used in list/card views */
 export interface AgentListItem {
+  scopedId?: string;
   name: string;
   slug: string;
   emoji: string;
@@ -63,7 +80,21 @@ export interface AgentListItem {
   jobCount?: number;
   runningCount?: number;
   status?: "active" | "running" | "idle";
+  cabinetPath?: string;
+  cabinetName?: string;
 }
+export interface ProviderModel {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export interface ProviderEffortLevel {
+  id: string;
+  name: string;
+  description?: string;
+}
+
 export interface ProviderInfo {
   id: string;
   name: string;
@@ -76,6 +107,8 @@ export interface ProviderInfo {
   error?: string;
   installMessage?: string;
   installSteps?: Array<{ title: string; detail: string; link?: { label: string; url: string } }>;
+  models?: ProviderModel[];
+  effortLevels?: ProviderEffortLevel[];
   usage?: {
     agentSlugs: string[];
     jobs: Array<{

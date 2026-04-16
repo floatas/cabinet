@@ -1,0 +1,15 @@
+schemaVersion: 1
+id: vc-os-portfolio
+name: Portfolio
+kind: child
+version: 0.1.0
+description: Fund II portfolio companies — metrics, board prep, news, and competitive intelligence across NeuralFlow, MintLayer, GreenPulse, DevForge, and DataStream.
+entry: index.md
+
+parent:
+  shared_context:
+    - /index.md
+    - /finance/index.md
+
+access:
+  mode: subtree-plus-parent-brief

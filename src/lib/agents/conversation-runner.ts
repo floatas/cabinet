@@ -1,3 +1,4 @@
+import path from "path";
 import type { JobConfig, JobRun, JobPostAction } from "@/types/jobs";
 import type { ConversationMeta } from "@/types/conversations";
 import { readPage } from "../storage/page-io";
@@ -9,6 +10,7 @@ import {
   readConversationMeta,
 } from "./conversation-store";
 import { createDaemonSession, getDaemonSessionOutput } from "./daemon-client";
+import { readLibraryPersona } from "./library-manager";
 import { readPersona, type AgentPersona } from "./persona-manager";
 import { getDefaultProviderId } from "./provider-runtime";
 
@@ -27,6 +29,7 @@ interface StartConversationInput {
   mentionedPaths?: string[];
   jobId?: string;
   jobName?: string;
+  cabinetPath?: string;
   cwd?: string;
   timeoutSeconds?: number;
   onComplete?: (completion: ConversationCompletion) => Promise<void> | void;
@@ -39,6 +42,31 @@ function buildCabinetEpilogueInstructions(): string {
     "CONTEXT: optional lightweight memory/context summary",
     "ARTIFACT: relative/path/to/file for every KB file you created or updated",
   ].join("\n");
+}
+
+function buildKnowledgeBaseScopeInstructions(
+  baseCwd: string,
+  cabinetPath?: string
+): string[] {
+  if (cabinetPath) {
+    return [
+      `Work only inside the cabinet-scoped knowledge base rooted at /data/${cabinetPath}.`,
+      `For local filesystem work, treat ${baseCwd} as the root for this run.`,
+      "Do not create or modify files in sibling cabinets or the global /data root unless the user explicitly asks.",
+    ];
+  }
+
+  return [
+    "Work in the Cabinet knowledge base rooted at /data.",
+    `For local filesystem work, treat ${baseCwd} as the root for this run.`,
+  ];
+}
+
+function buildDiagramOutputInstructions(): string[] {
+  return [
+    "If you create Mermaid diagrams, make sure the source is renderable.",
+    "Prefer Mermaid edge labels like `A -->|label| B` or `A -.->|label| B` instead of mixed forms such as `A -- \"label\" --> B`.",
+  ];
 }
 
 function buildAgentContextHeader(persona: AgentPersona | null, agentSlug: string): string {
@@ -85,26 +113,30 @@ export async function buildManualConversationPrompt(input: {
   agentSlug: string;
   userMessage: string;
   mentionedPaths?: string[];
+  cabinetPath?: string;
 }): Promise<{
   prompt: string;
   title: string;
   cwd?: string;
   providerId: string;
+  cabinetPath?: string;
 }> {
   const persona = input.agentSlug === "general"
     ? null
-    : await readPersona(input.agentSlug);
+    : await readPersona(input.agentSlug, input.cabinetPath);
   const mentionContext = await buildMentionContext(input.mentionedPaths || []);
+  const baseCwd = input.cabinetPath ? path.join(DATA_DIR, input.cabinetPath) : DATA_DIR;
   const cwd =
     persona?.workdir && persona.workdir !== "/data"
       ? `${DATA_DIR}/${persona.workdir.replace(/^\/+/, "")}`
-      : DATA_DIR;
+      : baseCwd;
 
   const prompt = [
     buildAgentContextHeader(persona, input.agentSlug),
     "",
-    "Work in the Cabinet knowledge base at /data.",
+    ...buildKnowledgeBaseScopeInstructions(baseCwd, input.cabinetPath),
     "Reflect useful outputs in KB files, not only in terminal text.",
+    ...buildDiagramOutputInstructions(),
     buildCabinetEpilogueInstructions(),
     "",
     `User request:\n${input.userMessage}${mentionContext}`,
@@ -115,6 +147,7 @@ export async function buildManualConversationPrompt(input: {
     title: makeTitle(input.userMessage),
     cwd,
     providerId: persona?.provider || getDefaultProviderId(),
+    cabinetPath: input.cabinetPath,
   };
 }
 
@@ -122,6 +155,7 @@ export async function buildEditorConversationPrompt(input: {
   pagePath: string;
   userMessage: string;
   mentionedPaths?: string[];
+  cabinetPath?: string;
 }): Promise<{
   prompt: string;
   title: string;
@@ -129,23 +163,29 @@ export async function buildEditorConversationPrompt(input: {
   mentionedPaths: string[];
   providerId: string;
 }> {
-  const persona = await readPersona("editor");
+  const persona =
+    (await readPersona("editor", input.cabinetPath)) ||
+    (await readPersona("editor")) ||
+    (await readLibraryPersona("editor", input.cabinetPath));
   const combinedMentionedPaths = Array.from(
     new Set([input.pagePath, ...(input.mentionedPaths || [])])
   );
   const mentionContext = await buildMentionContext(combinedMentionedPaths);
+  const baseCwd = input.cabinetPath ? path.join(DATA_DIR, input.cabinetPath) : DATA_DIR;
   const cwd =
     persona?.workdir && persona.workdir !== "/data"
       ? `${DATA_DIR}/${persona.workdir.replace(/^\/+/, "")}`
-      : DATA_DIR;
+      : baseCwd;
 
   const prompt = [
     buildAgentContextHeader(persona, "editor"),
     "",
     `You are editing the page at /data/${input.pagePath}.`,
     `Prefer making the requested changes directly in ${input.pagePath} unless the task clearly belongs in another KB file.`,
-    "Work in the Cabinet knowledge base at /data.",
+    "Do not assume the target is markdown. Follow the actual file type and Cabinet structure when choosing what to edit.",
+    ...buildKnowledgeBaseScopeInstructions(baseCwd, input.cabinetPath),
     "Edit KB files directly and reflect useful outputs in the KB, not only in terminal text.",
+    ...buildDiagramOutputInstructions(),
     buildCabinetEpilogueInstructions(),
     "",
     `User request:\n${input.userMessage}${mentionContext}`,
@@ -165,6 +205,7 @@ export async function startConversationRun(
 ): Promise<ConversationMeta> {
   const meta = await createConversation({
     agentSlug: input.agentSlug,
+    cabinetPath: input.cabinetPath,
     title: input.title,
     trigger: input.trigger,
     prompt: input.prompt,
@@ -304,20 +345,23 @@ async function processPostActions(
 }
 
 export async function startJobConversation(job: JobConfig): Promise<JobRun> {
-  const persona = job.agentSlug ? await readPersona(job.agentSlug) : null;
+  const persona = job.agentSlug ? await readPersona(job.agentSlug, job.cabinetPath) : null;
   const jobPrompt = substituteTemplateVars(job.prompt, job);
+  const baseCwd = job.cabinetPath ? path.join(DATA_DIR, job.cabinetPath) : DATA_DIR;
   const cwd =
-    job.workdir && job.workdir !== "/data"
-      ? `${DATA_DIR}/${job.workdir.replace(/^\/+/, "")}`
-      : persona?.workdir && persona.workdir !== "/data"
-        ? `${DATA_DIR}/${persona.workdir.replace(/^\/+/, "")}`
-        : DATA_DIR;
+    job.workdir && job.workdir !== "/data" && job.workdir !== "/"
+      ? path.join(baseCwd, job.workdir.replace(/^\/+/, ""))
+      : persona?.workdir && persona.workdir !== "/data" && persona.workdir !== "/"
+        ? path.join(baseCwd, persona.workdir.replace(/^\/+/, ""))
+        : baseCwd;
 
   const prompt = [
     buildAgentContextHeader(persona, job.agentSlug || "agent"),
     "",
     "This is a scheduled or manual Cabinet job.",
+    ...buildKnowledgeBaseScopeInstructions(baseCwd, job.cabinetPath),
     "Reflect the results in KB files whenever useful.",
+    ...buildDiagramOutputInstructions(),
     buildCabinetEpilogueInstructions(),
     "",
     `Job instructions:\n${jobPrompt}`,
@@ -331,6 +375,7 @@ export async function startJobConversation(job: JobConfig): Promise<JobRun> {
     providerId: job.provider || persona?.provider || getDefaultProviderId(),
     jobId: job.id,
     jobName: job.name,
+    cabinetPath: job.cabinetPath,
     cwd,
     timeoutSeconds: job.timeout || 600,
     onComplete: async (completion) => {

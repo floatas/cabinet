@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import fs from "fs/promises";
 import path from "path";
 import type {
@@ -7,6 +8,12 @@ import type {
   ConversationStatus,
   ConversationTrigger,
 } from "../../types/conversations";
+import { discoverCabinetPaths } from "../cabinets/discovery";
+import { buildConversationInstanceKey } from "./conversation-identity";
+import {
+  dedupeConversationNotifications,
+  shouldEnqueueConversationNotification,
+} from "./conversation-notification-utils";
 import { DATA_DIR, sanitizeFilename, virtualPathFromFs } from "../storage/path-utils";
 import {
   deleteFileOrDir,
@@ -19,10 +26,16 @@ import {
 
 export const CONVERSATIONS_DIR = path.join(DATA_DIR, ".agents", ".conversations");
 
+function resolveConversationsDir(cabinetPath?: string): string {
+  if (cabinetPath) return path.join(DATA_DIR, cabinetPath, ".agents", ".conversations");
+  return CONVERSATIONS_DIR;
+}
+
 // ── In-memory notification queue for completed/failed conversations ──
 export interface ConversationNotification {
   id: string;
   agentSlug: string;
+  cabinetPath?: string;
   title: string;
   status: ConversationStatus;
   summary?: string;
@@ -32,11 +45,14 @@ export interface ConversationNotification {
 const notificationQueue: ConversationNotification[] = [];
 
 export function drainConversationNotifications(): ConversationNotification[] {
-  return notificationQueue.splice(0, notificationQueue.length);
+  return dedupeConversationNotifications(
+    notificationQueue.splice(0, notificationQueue.length)
+  );
 }
 
 interface CreateConversationInput {
   agentSlug: string;
+  cabinetPath?: string;
   title: string;
   trigger: ConversationTrigger;
   prompt: string;
@@ -48,6 +64,7 @@ interface CreateConversationInput {
 
 interface ListConversationFilters {
   agentSlug?: string;
+  cabinetPath?: string;
   trigger?: ConversationTrigger;
   status?: ConversationStatus;
   pagePath?: string;
@@ -60,9 +77,18 @@ interface ParsedCabinetBlock {
   artifactPaths: string[];
 }
 
+interface PromptEchoMatchers {
+  normalizedLines: Set<string>;
+  compactLines: Set<string>;
+  compactFragments: string[];
+}
+
 const PLACEHOLDER_SUMMARY = "one short summary line";
 const PLACEHOLDER_CONTEXT = "optional lightweight memory/context summary";
 const PLACEHOLDER_ARTIFACT_HINT = "relative/path/to/file for every KB file you created or updated";
+const PLACEHOLDER_SUMMARY_FINGERPRINT = compactCabinetValue(PLACEHOLDER_SUMMARY);
+const PLACEHOLDER_CONTEXT_FINGERPRINT = compactCabinetValue(PLACEHOLDER_CONTEXT);
+const PLACEHOLDER_ARTIFACT_FINGERPRINT = compactCabinetValue(PLACEHOLDER_ARTIFACT_HINT);
 
 function formatTimestampSegment(date: Date): string {
   return date.toISOString().replace(/[:.]/g, "-");
@@ -72,28 +98,33 @@ function sanitizeSegment(value: string, fallback: string): string {
   return sanitizeFilename(value) || fallback;
 }
 
-function conversationDir(id: string): string {
-  return path.join(CONVERSATIONS_DIR, id);
+function cabinetScopeSegment(cabinetPath?: string): string {
+  const normalized = cabinetPath?.trim() || "__root__";
+  return createHash("sha1").update(normalized).digest("hex").slice(0, 8);
 }
 
-function metaPath(id: string): string {
-  return path.join(conversationDir(id), "meta.json");
+function conversationDir(id: string, cabinetPath?: string): string {
+  return path.join(resolveConversationsDir(cabinetPath), id);
 }
 
-function transcriptPathFs(id: string): string {
-  return path.join(conversationDir(id), "transcript.txt");
+function metaPath(id: string, cabinetPath?: string): string {
+  return path.join(conversationDir(id, cabinetPath), "meta.json");
 }
 
-function promptPathFs(id: string): string {
-  return path.join(conversationDir(id), "prompt.md");
+function transcriptPathFs(id: string, cabinetPath?: string): string {
+  return path.join(conversationDir(id, cabinetPath), "transcript.txt");
 }
 
-function mentionsPathFs(id: string): string {
-  return path.join(conversationDir(id), "mentions.json");
+function promptPathFs(id: string, cabinetPath?: string): string {
+  return path.join(conversationDir(id, cabinetPath), "prompt.md");
 }
 
-function artifactsPathFs(id: string): string {
-  return path.join(conversationDir(id), "artifacts.json");
+function mentionsPathFs(id: string, cabinetPath?: string): string {
+  return path.join(conversationDir(id, cabinetPath), "mentions.json");
+}
+
+function artifactsPathFs(id: string, cabinetPath?: string): string {
+  return path.join(conversationDir(id, cabinetPath), "artifacts.json");
 }
 
 function makeSummaryFromOutput(output: string): string | undefined {
@@ -120,44 +151,71 @@ export function extractConversationRequest(prompt: string): string {
 }
 
 function normalizeArtifactPath(rawPath: string): string | null {
-  const trimmed = rawPath.trim();
+  const trimmed = sanitizeCabinetFieldValue(rawPath).trim();
   if (!trimmed) return null;
-  if (trimmed === PLACEHOLDER_ARTIFACT_HINT) return null;
+  if (isPlaceholderCabinetValue(trimmed)) return null;
   if (trimmed.includes("for every KB file")) return null;
-
-  if (trimmed.startsWith("/data/")) {
-    return trimmed.replace(/^\/data\//, "");
+  if (compactCabinetValue(trimmed).includes(PLACEHOLDER_ARTIFACT_FINGERPRINT)) {
+    return null;
+  }
+  if (
+    /(?:\*\*|##\s|User request:|Working Style|Current Context|Output Structure|Brand voice|You are the\b)/i.test(
+      trimmed
+    )
+  ) {
+    return null;
   }
 
-  if (trimmed.startsWith(DATA_DIR)) {
-    return virtualPathFromFs(trimmed);
+  const candidate = (() => {
+    const extensionMatch = trimmed.match(/^(.+?\.[A-Za-z0-9]+)(?:\s|$)/);
+    if (extensionMatch?.[1]) {
+      return extensionMatch[1];
+    }
+    return trimmed;
+  })();
+
+  if (candidate.startsWith("/data/")) {
+    return candidate.replace(/^\/data\//, "");
   }
 
-  const normalized = trimmed.replace(/^\.?\//, "");
+  if (candidate.startsWith(DATA_DIR)) {
+    return virtualPathFromFs(candidate);
+  }
+
+  const normalized = candidate.replace(/^\.?\//, "");
   if (!normalized || normalized.startsWith("..")) return null;
+  if (/^relative\/path\/to\/file\d*$/i.test(normalized)) return null;
   return normalized;
 }
 
 function sanitizeCabinetFieldValue(value: string): string {
   return value
+    .replace(/\s+[✢✳✶✻✽·].*$/g, "")
+    .replace(/\s*⎿\s*Tip:.*$/g, "")
+    .replace(/\s*Tip:\s.*$/g, "")
+    .replace(/\s*[─-]{8,}.*$/g, "")
     .replace(/\s*❯\s*$/g, "")
-    .replace(/\s*[─-]{8,}\s*$/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
+function compactCabinetValue(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
 function isPlaceholderCabinetValue(value?: string): boolean {
   if (!value) return false;
-  const normalized = value.trim().toLowerCase();
+  const normalized = compactCabinetValue(value.trim());
   return (
-    normalized === PLACEHOLDER_SUMMARY ||
-    normalized === PLACEHOLDER_CONTEXT ||
-    normalized === PLACEHOLDER_ARTIFACT_HINT
+    normalized === PLACEHOLDER_SUMMARY_FINGERPRINT ||
+    normalized === PLACEHOLDER_CONTEXT_FINGERPRINT ||
+    normalized === PLACEHOLDER_ARTIFACT_FINGERPRINT
   );
 }
 
 export function parseCabinetBlock(output: string, prompt?: string): ParsedCabinetBlock {
   const cleaned = cleanConversationOutputForParsing(output, prompt);
+  const promptEchoMatchers = buildPromptEchoMatchers(prompt);
   const matches = Array.from(cleaned.matchAll(/```cabinet\s*([\s\S]*?)```/gi));
   const match = matches.at(-1);
   const artifactPaths: string[] = [];
@@ -171,6 +229,9 @@ export function parseCabinetBlock(output: string, prompt?: string): ParsedCabine
       .filter(Boolean);
 
     for (const line of lines) {
+      if (isPromptEchoLine(line, promptEchoMatchers)) {
+        continue;
+      }
       if (line.startsWith("SUMMARY:")) {
         summary = sanitizeCabinetFieldValue(line.slice("SUMMARY:".length));
         continue;
@@ -211,6 +272,11 @@ export function parseCabinetBlock(output: string, prompt?: string): ParsedCabine
     if ((entry.index ?? 0) < relevantStart) continue;
 
     const field = entry[1];
+    const rawValue = entry[2] || "";
+    const rawLine = `${field}: ${rawValue}`.trim();
+    if (isPromptEchoLine(rawLine, promptEchoMatchers)) {
+      continue;
+    }
     const value = sanitizeCabinetFieldValue(entry[2] || "");
     if (field === "SUMMARY") {
       summary = value;
@@ -242,11 +308,13 @@ export function buildConversationId(input: {
   agentSlug: string;
   trigger: ConversationTrigger;
   jobName?: string;
+  cabinetPath?: string;
   now?: Date;
 }): string {
   const now = input.now || new Date();
   const parts = [
     formatTimestampSegment(now),
+    cabinetScopeSegment(input.cabinetPath),
     sanitizeSegment(input.agentSlug, "agent"),
     input.trigger,
   ];
@@ -258,65 +326,92 @@ export function buildConversationId(input: {
   return parts.join("-");
 }
 
-export async function ensureConversationsDir(): Promise<void> {
-  await ensureDirectory(CONVERSATIONS_DIR);
+export async function ensureConversationsDir(cabinetPath?: string): Promise<void> {
+  await ensureDirectory(resolveConversationsDir(cabinetPath));
 }
 
 export async function createConversation(
   input: CreateConversationInput
 ): Promise<ConversationMeta> {
-  await ensureConversationsDir();
+  await ensureConversationsDir(input.cabinetPath);
 
   const startedAt = input.startedAt || new Date().toISOString();
   const id = buildConversationId({
     agentSlug: input.agentSlug,
     trigger: input.trigger,
     jobName: input.jobName || input.jobId,
+    cabinetPath: input.cabinetPath,
     now: new Date(startedAt),
   });
-  const dir = conversationDir(id);
+  const cp = input.cabinetPath;
+  const dir = conversationDir(id, cp);
   await ensureDirectory(dir);
 
   const meta: ConversationMeta = {
     id,
     agentSlug: input.agentSlug,
+    cabinetPath: cp,
     title: input.title,
     trigger: input.trigger,
     status: "running",
     startedAt,
     jobId: input.jobId,
     jobName: input.jobName,
-    promptPath: virtualPathFromFs(promptPathFs(id)),
-    transcriptPath: virtualPathFromFs(transcriptPathFs(id)),
+    promptPath: virtualPathFromFs(promptPathFs(id, cp)),
+    transcriptPath: virtualPathFromFs(transcriptPathFs(id, cp)),
     mentionedPaths: input.mentionedPaths || [],
     artifactPaths: [],
   };
 
   await Promise.all([
-    writeFileContent(promptPathFs(id), input.prompt),
-    writeFileContent(transcriptPathFs(id), ""),
+    writeFileContent(promptPathFs(id, cp), input.prompt),
+    writeFileContent(transcriptPathFs(id, cp), ""),
     writeFileContent(
-      mentionsPathFs(id),
+      mentionsPathFs(id, cp),
       JSON.stringify(input.mentionedPaths || [], null, 2)
     ),
-    writeFileContent(artifactsPathFs(id), JSON.stringify([], null, 2)),
-    writeFileContent(metaPath(id), JSON.stringify(meta, null, 2)),
+    writeFileContent(artifactsPathFs(id, cp), JSON.stringify([], null, 2)),
+    writeFileContent(metaPath(id, cp), JSON.stringify(meta, null, 2)),
   ]);
 
   return meta;
 }
 
 export async function readConversationMeta(
-  id: string
+  id: string,
+  cabinetPath?: string
 ): Promise<ConversationMeta | null> {
-  const filePath = metaPath(id);
-  if (!(await fileExists(filePath))) return null;
+  const resolvedCabinetPath = await resolveConversationCabinetPath(id, cabinetPath);
+  if (resolvedCabinetPath === null) return null;
+
+  const filePath = metaPath(id, resolvedCabinetPath);
   try {
     const raw = await readFileContent(filePath);
-    return JSON.parse(raw) as ConversationMeta;
+    const parsed = JSON.parse(raw) as ConversationMeta;
+    if (!parsed.cabinetPath && typeof resolvedCabinetPath === "string") {
+      parsed.cabinetPath = resolvedCabinetPath;
+    }
+    return parsed;
   } catch {
     return null;
   }
+}
+
+async function resolveConversationCabinetPath(
+  id: string,
+  cabinetPath?: string
+): Promise<string | null> {
+  if (typeof cabinetPath === "string") {
+    return (await fileExists(metaPath(id, cabinetPath))) ? cabinetPath : null;
+  }
+
+  for (const candidate of await discoverCabinetPaths()) {
+    if (await fileExists(metaPath(id, candidate))) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 function stripAnsiText(str: string): string {
@@ -340,42 +435,77 @@ function normalizeDisplayLine(line: string): string {
     .trim();
 }
 
-function buildPromptEchoLineSet(prompt?: string): Set<string> {
-  if (!prompt) return new Set<string>();
+function buildPromptEchoMatchers(prompt?: string): PromptEchoMatchers {
+  if (!prompt) {
+    return {
+      normalizedLines: new Set<string>(),
+      compactLines: new Set<string>(),
+      compactFragments: [],
+    };
+  }
 
-  return new Set(
-    stripAnsiText(prompt)
-      .replace(/\r+/g, "\n")
-      .split("\n")
-      .map((line) => normalizeDisplayLine(line))
-      .filter((line) => line.length >= 4)
-  );
+  const normalizedLines = new Set<string>();
+  const compactLines = new Set<string>();
+  for (const line of stripAnsiText(prompt).replace(/\r+/g, "\n").split("\n")) {
+    const normalized = normalizeDisplayLine(line);
+    if (normalized.length >= 4) {
+      normalizedLines.add(normalized);
+    }
+    const compact = compactCabinetValue(line);
+    if (compact.length >= 12) {
+      compactLines.add(compact);
+    }
+  }
+
+  return {
+    normalizedLines,
+    compactLines,
+    compactFragments: [...compactLines]
+      .filter((fragment) => fragment.length >= 24)
+      .sort((left, right) => right.length - left.length),
+  };
 }
 
 function stripPromptEchoFromTranscript(transcript: string, prompt?: string): string {
-  const promptEchoLines = buildPromptEchoLineSet(prompt);
-  if (promptEchoLines.size === 0) return transcript;
+  const promptEchoMatchers = buildPromptEchoMatchers(prompt);
+  if (
+    promptEchoMatchers.normalizedLines.size === 0 &&
+    promptEchoMatchers.compactLines.size === 0
+  ) {
+    return transcript;
+  }
 
   return transcript
     .split("\n")
     .filter((line) => {
-      const normalized = normalizeDisplayLine(line);
-      return !normalized || !promptEchoLines.has(normalized);
+      return !isPromptEchoLine(line, promptEchoMatchers);
     })
     .join("\n");
 }
 
-function isPromptEchoLine(line: string, promptEchoLines: Set<string>): boolean {
+function isPromptEchoLine(line: string, promptEchoMatchers: PromptEchoMatchers): boolean {
   const normalized = normalizeDisplayLine(line);
   if (!normalized) return false;
-  if (promptEchoLines.has(normalized)) return true;
+  if (promptEchoMatchers.normalizedLines.has(normalized)) return true;
+
+  const compact = compactCabinetValue(line);
+  if (compact && promptEchoMatchers.compactLines.has(compact)) {
+    return true;
+  }
 
   let fragmentMatches = 0;
-  for (const fragment of promptEchoLines) {
+  for (const fragment of promptEchoMatchers.normalizedLines) {
     if (fragment.length < 12) continue;
     if (normalized.includes(fragment)) {
       fragmentMatches += 1;
       if (fragmentMatches >= 2) return true;
+    }
+  }
+
+  if (compact.length >= 24) {
+    for (const fragment of promptEchoMatchers.compactFragments) {
+      if (compact === fragment) return true;
+      if (compact.includes(fragment)) return true;
     }
   }
 
@@ -392,12 +522,64 @@ function cleanConversationOutputForParsing(output: string, prompt?: string): str
   );
 }
 
+function isClaudeIdleTailNoise(line: string): boolean {
+  const normalized = normalizeDisplayLine(line);
+  if (!normalized) return true;
+  if (/^[─-]{8,}$/.test(normalized)) return true;
+  if (/^⏵⏵/.test(normalized)) return true;
+  if (/^[✢✳✶✻✽·]$/.test(normalized)) return true;
+  if (/^⎿\s*Tip:/i.test(normalized) || /^Tip:/i.test(normalized)) return true;
+
+  // Completion timing line: "Brewed for 1m 43s", "✻ Sautéed for 30s", etc.
+  // Claude Code uses many cooking/creative verbs — match generically.
+  if (/^[✢✳✶✻✽]\s*\S+\s+for\b/i.test(normalized)) return true;
+  if (/\bfor\s+(?:\d+m\s*)?\d+s\b/i.test(normalized)) return true;
+  if (/^\S+\s+for\s+\d/i.test(normalized)) return true;
+
+  const compact = compactCabinetValue(line);
+  if (!compact) return true;
+  if (compact.includes("esctointerrupt")) return false;
+  if (compact.includes("bypasspermissionson")) return true;
+  if (compact.includes("shifttabtocycle")) return true;
+  if (/\wfor\d/.test(compact)) return true;
+  if (
+    /(orbiting|sublimating|sketching|brewing|thinking|manifesting|twisting|lollygagging|contemplating|vibing|improvising|envisioning|churning)/i.test(
+      normalized
+    )
+  ) {
+    return false;
+  }
+
+  return false;
+}
+
+function hasClaudePromptTail(transcript: string, prompt?: string): boolean {
+  const cleaned = cleanConversationOutputForParsing(transcript, prompt)
+    .replace(/[─-]{8,}/g, "\n")
+    .replace(/❯\s*(?=(?:SUMMARY|CONTEXT|ARTIFACT):)/g, "\n");
+  const lines = cleaned.split("\n");
+
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const normalized = normalizeDisplayLine(lines[index] || "");
+    if (!normalized) continue;
+    if (/^[❯>](?:\s|$)/.test(normalized)) {
+      return true;
+    }
+    if (isClaudeIdleTailNoise(lines[index] || "")) {
+      continue;
+    }
+    return false;
+  }
+
+  return false;
+}
+
 export function formatConversationTranscriptForDisplay(
   transcript: string,
   prompt?: string
 ): string {
   const cleaned = cleanConversationOutputForParsing(transcript, prompt);
-  const promptEchoLines = buildPromptEchoLineSet(prompt);
+  const promptEchoMatchers = buildPromptEchoMatchers(prompt);
   const normalized = cleaned
     .replace(/[─-]{8,}/g, "\n")
     .replace(/\s*(SUMMARY:|CONTEXT:|ARTIFACT:)\s*/g, "\n$1")
@@ -407,7 +589,7 @@ export function formatConversationTranscriptForDisplay(
     const normalizedLine = normalizeDisplayLine(trimmed);
     return (
       !trimmed ||
-      isPromptEchoLine(trimmed, promptEchoLines) ||
+      isPromptEchoLine(trimmed, promptEchoMatchers) ||
       normalizedLine === PLACEHOLDER_SUMMARY ||
       normalizedLine === PLACEHOLDER_CONTEXT ||
       normalizedLine === PLACEHOLDER_ARTIFACT_HINT ||
@@ -488,18 +670,18 @@ export function formatConversationTranscriptForDisplay(
   return filtered.join("\n").trim();
 }
 
-function transcriptShowsCompletedRun(transcript: string, prompt?: string): boolean {
+function hasMeaningfulCabinetResult(transcript: string, prompt?: string): boolean {
+  const parsed = parseCabinetBlock(transcript, prompt);
+  return Boolean(parsed.summary || parsed.contextSummary || parsed.artifactPaths.length > 0);
+}
+
+export function transcriptShowsCompletedRun(transcript: string, prompt?: string): boolean {
   // Keep this prompt-aware. A looser regex here will treat the echoed prompt's
   // cabinet instructions as a finished run and force the UI out of streaming mode.
-  const parsed = parseCabinetBlock(transcript, prompt);
-  if (parsed.summary || parsed.artifactPaths.length > 0) {
-    return true;
+  if (!hasMeaningfulCabinetResult(transcript, prompt)) {
+    return false;
   }
-
-  const plain = cleanConversationOutputForParsing(transcript, prompt);
-  return (
-    /(?:^|\n)[❯>]\s*$/.test(plain)
-  );
+  return hasClaudePromptTail(transcript, prompt);
 }
 
 async function maybeResolveCompletedConversation(
@@ -507,9 +689,10 @@ async function maybeResolveCompletedConversation(
 ): Promise<ConversationMeta | null> {
   if (!meta) return meta;
 
-  const transcript = await readConversationTranscript(meta.id);
-  const prompt = (await fileExists(promptPathFs(meta.id)))
-    ? await readFileContent(promptPathFs(meta.id))
+  const cabinetPath = meta.cabinetPath;
+  const transcript = await readConversationTranscript(meta.id, cabinetPath);
+  const prompt = (await fileExists(promptPathFs(meta.id, cabinetPath)))
+    ? await readFileContent(promptPathFs(meta.id, cabinetPath))
     : "";
   if (meta.status === "running" && !transcriptShowsCompletedRun(transcript, prompt)) {
     return meta;
@@ -534,29 +717,31 @@ async function maybeResolveCompletedConversation(
       status: meta.status === "running" ? "completed" : meta.status,
       exitCode: meta.status === "running" ? 0 : meta.exitCode,
       output: transcript,
-    })
+    }, cabinetPath)
   ) || meta;
 }
 
 export async function writeConversationMeta(meta: ConversationMeta): Promise<void> {
-  await ensureDirectory(conversationDir(meta.id));
-  await writeFileContent(metaPath(meta.id), JSON.stringify(meta, null, 2));
+  await ensureDirectory(conversationDir(meta.id, meta.cabinetPath));
+  await writeFileContent(metaPath(meta.id, meta.cabinetPath), JSON.stringify(meta, null, 2));
 }
 
 export async function appendConversationTranscript(
   id: string,
-  chunk: string
+  chunk: string,
+  cabinetPath?: string
 ): Promise<void> {
-  await ensureDirectory(conversationDir(id));
-  await fs.appendFile(transcriptPathFs(id), chunk, "utf-8");
+  await ensureDirectory(conversationDir(id, cabinetPath));
+  await fs.appendFile(transcriptPathFs(id, cabinetPath), chunk, "utf-8");
 }
 
 export async function replaceConversationArtifacts(
   id: string,
-  artifacts: ConversationArtifact[]
+  artifacts: ConversationArtifact[],
+  cabinetPath?: string
 ): Promise<void> {
-  await ensureDirectory(conversationDir(id));
-  await writeFileContent(artifactsPathFs(id), JSON.stringify(artifacts, null, 2));
+  await ensureDirectory(conversationDir(id, cabinetPath));
+  await writeFileContent(artifactsPathFs(id, cabinetPath), JSON.stringify(artifacts, null, 2));
 }
 
 export async function finalizeConversation(
@@ -565,15 +750,17 @@ export async function finalizeConversation(
     status: ConversationStatus;
     exitCode?: number | null;
     output?: string;
-  }
+  },
+  cabinetPath?: string
 ): Promise<ConversationMeta | null> {
-  const meta = await readConversationMeta(id);
+  const meta = await readConversationMeta(id, cabinetPath);
   if (!meta) return null;
+  const cp = meta.cabinetPath || cabinetPath;
 
-  const hasPrompt = await fileExists(promptPathFs(id));
+  const hasPrompt = await fileExists(promptPathFs(id, cp));
   const [output, prompt] = await Promise.all([
-    input.output ? Promise.resolve(input.output) : readConversationTranscript(id),
-    hasPrompt ? readFileContent(promptPathFs(id)) : Promise.resolve(""),
+    input.output ? Promise.resolve(input.output) : readConversationTranscript(id, cp),
+    hasPrompt ? readFileContent(promptPathFs(id, cp)) : Promise.resolve(""),
   ]);
   const cleanedOutput = cleanConversationOutputForParsing(output, prompt);
   const parsed = parseCabinetBlock(cleanedOutput, prompt);
@@ -594,14 +781,15 @@ export async function finalizeConversation(
 
   await Promise.all([
     writeConversationMeta(meta),
-    replaceConversationArtifacts(id, artifacts),
+    replaceConversationArtifacts(id, artifacts, cp),
   ]);
 
   // Push notification for terminal statuses
-  if (meta.status === "completed" || meta.status === "failed") {
+  if (shouldEnqueueConversationNotification(previousStatus, meta.status)) {
     notificationQueue.push({
       id: meta.id,
       agentSlug: meta.agentSlug,
+      cabinetPath: meta.cabinetPath,
       title: meta.title,
       status: meta.status,
       summary: meta.summary,
@@ -612,29 +800,34 @@ export async function finalizeConversation(
   return meta;
 }
 
-export async function readConversationTranscript(id: string): Promise<string> {
-  const filePath = transcriptPathFs(id);
+export async function readConversationTranscript(id: string, cabinetPath?: string): Promise<string> {
+  const resolvedCabinetPath = await resolveConversationCabinetPath(id, cabinetPath);
+  if (resolvedCabinetPath === null) return "";
+
+  const filePath = transcriptPathFs(id, resolvedCabinetPath);
   if (!(await fileExists(filePath))) return "";
   return readFileContent(filePath);
 }
 
 export async function readConversationDetail(
-  id: string
+  id: string,
+  cabinetPath?: string
 ): Promise<ConversationDetail | null> {
-  const meta = await maybeResolveCompletedConversation(await readConversationMeta(id));
+  const meta = await maybeResolveCompletedConversation(await readConversationMeta(id, cabinetPath));
   if (!meta) return null;
+  const cp = meta.cabinetPath || cabinetPath;
 
   const [hasPrompt, hasMentions, hasArtifacts] = await Promise.all([
-    fileExists(promptPathFs(id)),
-    fileExists(mentionsPathFs(id)),
-    fileExists(artifactsPathFs(id)),
+    fileExists(promptPathFs(id, cp)),
+    fileExists(mentionsPathFs(id, cp)),
+    fileExists(artifactsPathFs(id, cp)),
   ]);
 
   const [prompt, transcript, mentionsRaw, artifactsRaw] = await Promise.all([
-    hasPrompt ? readFileContent(promptPathFs(id)) : Promise.resolve(""),
-    readConversationTranscript(id),
-    hasMentions ? readFileContent(mentionsPathFs(id)) : Promise.resolve("[]"),
-    hasArtifacts ? readFileContent(artifactsPathFs(id)) : Promise.resolve("[]"),
+    hasPrompt ? readFileContent(promptPathFs(id, cp)) : Promise.resolve(""),
+    readConversationTranscript(id, cp),
+    hasMentions ? readFileContent(mentionsPathFs(id, cp)) : Promise.resolve("[]"),
+    hasArtifacts ? readFileContent(artifactsPathFs(id, cp)) : Promise.resolve("[]"),
   ]);
 
   let mentions: string[] = [];
@@ -656,6 +849,7 @@ export async function readConversationDetail(
     meta,
     prompt,
     request: extractConversationRequest(prompt),
+    rawTranscript: transcript,
     transcript: formatConversationTranscriptForDisplay(transcript, prompt),
     mentions,
     artifacts,
@@ -665,18 +859,31 @@ export async function readConversationDetail(
 export async function listConversationMetas(
   filters: ListConversationFilters = {}
 ): Promise<ConversationMeta[]> {
-  await ensureConversationsDir();
-  const entries = await listDirectory(CONVERSATIONS_DIR);
+  const cabinetPaths = filters.cabinetPath
+    ? [filters.cabinetPath]
+    : await discoverCabinetPaths();
 
-  const metas = (
-    await Promise.all(
-      entries
-        .filter((entry) => entry.isDirectory)
-        .map(async (entry) =>
-          maybeResolveCompletedConversation(await readConversationMeta(entry.name))
+  const groups = await Promise.all(
+    cabinetPaths.map(async (cabinetPath) => {
+      const convsDir = resolveConversationsDir(cabinetPath);
+      await ensureDirectory(convsDir);
+      const entries = await listDirectory(convsDir);
+
+      return (
+        await Promise.all(
+          entries
+            .filter((entry) => entry.isDirectory)
+            .map(async (entry) =>
+              maybeResolveCompletedConversation(
+                await readConversationMeta(entry.name, cabinetPath)
+              )
+            )
         )
-    )
-  ).filter(Boolean) as ConversationMeta[];
+      ).filter(Boolean) as ConversationMeta[];
+    })
+  );
+
+  const metas = groups.flat();
 
   const filtered = metas.filter((meta) => {
     if (filters.agentSlug && meta.agentSlug !== filters.agentSlug) return false;
@@ -691,7 +898,15 @@ export async function listConversationMetas(
       new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
   );
 
-  return filtered.slice(0, filters.limit || 200);
+  const deduped = new Map<string, ConversationMeta>();
+  for (const meta of filtered) {
+    const key = buildConversationInstanceKey(meta);
+    if (!deduped.has(key)) {
+      deduped.set(key, meta);
+    }
+  }
+
+  return Array.from(deduped.values()).slice(0, filters.limit || 200);
 }
 
 export async function getRunningConversationCounts(): Promise<Record<string, number>> {
@@ -702,9 +917,11 @@ export async function getRunningConversationCounts(): Promise<Record<string, num
   }, {});
 }
 
-export async function deleteConversation(id: string): Promise<boolean> {
-  const dir = conversationDir(id);
-  if (!(await fileExists(metaPath(id)))) return false;
+export async function deleteConversation(id: string, cabinetPath?: string): Promise<boolean> {
+  const meta = await readConversationMeta(id, cabinetPath);
+  if (!meta) return false;
+
+  const dir = conversationDir(id, meta.cabinetPath || cabinetPath);
   await deleteFileOrDir(dir);
   return true;
 }

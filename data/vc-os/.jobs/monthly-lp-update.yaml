@@ -1,0 +1,27 @@
+id: monthly-lp-update
+name: Monthly LP Flash Update Draft
+enabled: true
+schedule: 0 9 * * 1
+provider: claude-code
+ownerAgent: managing-partner
+agentSlug: managing-partner
+timeout: 600
+prompt: |-
+  On the first Monday of each month, draft a 1-page LP flash update for Warp Ventures Fund II.
+
+  Review:
+  - Each portfolio company's metrics.csv for the most recent month's data
+  - finance/q1-2026-report.md for fund-level context
+  - intelligence/daily-brief.md for market context
+
+  Write a concise LP Flash Update with:
+  1. Fund deployment status (1 sentence)
+  2. Portfolio highlights table (company, ARR, growth, notable event)
+  3. Market pulse (2-3 sentences on the investment environment)
+  4. What we're watching (2 bullets)
+
+  Save as a new file finance/lp-flash-[YYYY-MM].md with proper frontmatter.
+  This is a DRAFT — label it clearly. Marcus Li (Finance) will review before sending.
+cabinetPath: vc-os
+createdAt: '2026-04-13T00:00:00.000Z'
+updatedAt: '2026-04-13T00:00:00.000Z'

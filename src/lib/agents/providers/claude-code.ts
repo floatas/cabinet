@@ -19,6 +19,18 @@ export const claudeCodeProvider: AgentProvider = {
     { title: "Install Claude Code", detail: "npm install -g @anthropic-ai/claude-code" },
     { title: "Log in", detail: "Run claude in your terminal and follow the login prompts." },
   ],
+  models: [
+    { id: "sonnet", name: "Claude Sonnet", description: "Fast and capable" },
+    { id: "opus", name: "Claude Opus", description: "Most intelligent" },
+    { id: "haiku", name: "Claude Haiku", description: "Fastest responses" },
+  ],
+  detachedPromptLaunchMode: "session",
+  effortLevels: [
+    { id: "low", name: "Low", description: "Quick, minimal reasoning" },
+    { id: "medium", name: "Medium", description: "Balanced" },
+    { id: "high", name: "High", description: "Thorough reasoning" },
+    { id: "max", name: "Max", description: "Maximum depth" },
+  ],
   command: "claude",
   commandCandidates: [
     `${process.env.HOME || ""}/.local/bin/claude`,

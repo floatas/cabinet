@@ -1,0 +1,24 @@
+id: daily-morning-brief
+name: Daily Morning Intelligence Brief
+enabled: true
+schedule: 0 7 * * 1-5
+provider: claude-code
+ownerAgent: analyst
+agentSlug: analyst
+timeout: 600
+prompt: |-
+  Review the Warp Ventures intelligence watchlist pages under intelligence/x-watchlist/ for each topic:
+  ai-ml, developer-tools, climate-tech, crypto-web3, and b2b-saas.
+
+  Then synthesize the most important signals into today's morning brief. Your output should:
+  1. Open with a "Top Signal" — the single most important development for Warp's portfolio or thesis
+  2. Include one paragraph per major theme (AI, Climate, DevTools, B2B)
+  3. List 3-5 notable funding rounds from the past 24 hours with investor and relevance
+  4. List 3-5 X posts worth reading (with handle and key quote)
+  5. Flag any development that directly touches a portfolio company (NeuralFlow, MintLayer, GreenPulse, DevForge, DataStream) with a ⚠️ emoji
+
+  Format the output as a new date-stamped section at the TOP of intelligence/daily-brief.md.
+  Do not overwrite existing sections — prepend a new H2 section with today's date.
+cabinetPath: vc-os
+createdAt: '2026-04-13T00:00:00.000Z'
+updatedAt: '2026-04-13T00:00:00.000Z'

@@ -14,6 +14,7 @@ export interface ConversationArtifact {
 export interface ConversationMeta {
   id: string;
   agentSlug: string;
+  cabinetPath?: string;
   title: string;
   trigger: ConversationTrigger;
   status: ConversationStatus;
@@ -35,6 +36,7 @@ export interface ConversationDetail {
   prompt: string;
   request: string;
   transcript: string;
+  rawTranscript: string;
   mentions: string[];
   artifacts: ConversationArtifact[];
 }

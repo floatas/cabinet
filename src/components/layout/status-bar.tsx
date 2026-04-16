@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { GitBranch, RefreshCw, Check, CloudDownload, Star, X, GitCommit } from "lucide-react";
+import { GitBranch, RefreshCw, Check, CloudDownload, Star, X, GitCommit, ArrowRight } from "lucide-react";
 import { useCabinetUpdate } from "@/hooks/use-cabinet-update";
 import { useEditorStore } from "@/stores/editor-store";
 import { useTreeStore } from "@/stores/tree-store";
 import { useAppStore } from "@/stores/app-store";
+import { useAIPanelStore } from "@/stores/ai-panel-store";
 
 const DISCORD_SUPPORT_URL = "https://discord.gg/hJa5TRTbTH";
 const GITHUB_REPO_URL = "https://github.com/hilash/cabinet";
@@ -42,15 +43,94 @@ function formatGithubStars(stars: number) {
   return new Intl.NumberFormat("en-US").format(stars);
 }
 
+/* ── Star burst explosion particles ── */
+const BURST_ANGLES = [0, 45, 90, 135, 180, 225, 270, 315];
+
+function StarExplosion() {
+  return (
+    <span className="pointer-events-none absolute inset-0" aria-hidden="true">
+      {BURST_ANGLES.map((angle, i) => {
+        const rad = (angle * Math.PI) / 180;
+        const dist = i % 2 === 0 ? 18 : 14;
+        const tx = Math.round(Math.cos(rad) * dist);
+        const ty = Math.round(Math.sin(rad) * dist);
+        return (
+          <span
+            key={angle}
+            className="absolute left-1/2 top-1/2 text-[7px] leading-none text-amber-400"
+            style={{
+              "--sb-x": `${tx}px`,
+              "--sb-y": `${ty}px`,
+              animation: "cabinet-star-burst 0.65s ease-out forwards",
+              animationDelay: `${i * 25}ms`,
+            } as React.CSSProperties}
+          >
+            ✦
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 export function StatusBar() {
   const { saveStatus, currentPath } = useEditorStore();
   const loadTree = useTreeStore((s) => s.loadTree);
+  const selectedPath = useTreeStore((s) => s.selectedPath);
+  const section = useAppStore((s) => s.section);
   const setSection = useAppStore((s) => s.setSection);
+  const setAiPanelCollapsed = useAppStore((s) => s.setAiPanelCollapsed);
+  const { open, addEditorSession } = useAIPanelStore();
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiSubmitting, setAiSubmitting] = useState(false);
+
+  const showAIPill = section.type === "page" && !!selectedPath;
+
+  const handleAISubmit = async () => {
+    if (!aiPrompt.trim() || !selectedPath || aiSubmitting) return;
+    const message = aiPrompt.trim();
+    setAiPrompt("");
+    setAiSubmitting(true);
+    setAiPanelCollapsed(false);
+    open();
+    try {
+      const response = await fetch("/api/agents/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: "editor",
+          pagePath: selectedPath,
+          userMessage: message,
+          mentionedPaths: [],
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const conversation = data.conversation as { id: string; title: string };
+        addEditorSession({
+          id: conversation.id,
+          sessionId: conversation.id,
+          pagePath: selectedPath,
+          userMessage: message,
+          prompt: conversation.title,
+          timestamp: Date.now(),
+          status: "running",
+          reconnect: true,
+        });
+      }
+    } finally {
+      setAiSubmitting(false);
+    }
+  };
   const [uncommitted, setUncommitted] = useState(0);
   const [committing, setCommitting] = useState(false);
   const [pullStatus, setPullStatus] = useState<"idle" | "pulling" | "pulled" | "up-to-date" | "error">("idle");
   const [pulling, setPulling] = useState(false);
   const [githubStars, setGithubStars] = useState(GITHUB_STARS_FALLBACK);
+  const [displayStars, setDisplayStars] = useState(0);
+  const [starsExploding, setStarsExploding] = useState(false);
+  const starsAnimRef = useRef<number | null>(null);
+  const starsAnimated = useRef(false);
   const didAutoPullRef = useRef(false);
   const [appAlive, setAppAlive] = useState(true);
   const [daemonAlive, setDaemonAlive] = useState(true);
@@ -226,8 +306,61 @@ export function StatusBar() {
     };
   }, [fetchGitHubStats]);
 
+  // Animate stars counter from 0 → real value once real data arrives
+  useEffect(() => {
+    if (githubStars === GITHUB_STARS_FALLBACK) return;
+    if (starsAnimated.current) return;
+    starsAnimated.current = true;
+    const target = githubStars;
+    const duration = 2000;
+    const startTime = performance.now();
+    const tick = (now: number) => {
+      const progress = Math.min((now - startTime) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplayStars(Math.round(target * eased));
+      if (progress < 1) {
+        starsAnimRef.current = requestAnimationFrame(tick);
+      } else {
+        setDisplayStars(target);
+        setStarsExploding(true);
+        setTimeout(() => setStarsExploding(false), 900);
+      }
+    };
+    starsAnimRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (starsAnimRef.current !== null) cancelAnimationFrame(starsAnimRef.current);
+    };
+  }, [githubStars]);
+
   return (
-    <div className="flex items-center justify-between px-3 py-1 border-t border-border text-[11px] text-muted-foreground/60 bg-background">
+    <div className="relative flex items-center justify-between px-3 py-1 border-t border-border text-[11px] text-muted-foreground/60 bg-background">
+      {/* Center: AI edit pill */}
+      {showAIPill && (
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center pointer-events-auto">
+          <div className="flex items-center rounded-full border border-border/50 bg-muted/30 px-2.5 py-0.5 gap-1.5 focus-within:border-border/80 focus-within:bg-muted/60 transition-colors w-56">
+            <input
+              type="text"
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void handleAISubmit();
+                }
+              }}
+              placeholder="How to edit this page?"
+              className="flex-1 bg-transparent text-[11px] text-foreground placeholder:text-muted-foreground/40 outline-none min-w-0"
+            />
+            <button
+              onClick={() => void handleAISubmit()}
+              disabled={!aiPrompt.trim() || aiSubmitting}
+              className="shrink-0 text-muted-foreground/30 hover:text-muted-foreground disabled:opacity-20 transition-colors cursor-pointer"
+            >
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+        </div>
+      )}
       <div className="flex min-w-0 items-center gap-3">
         <div className="relative">
           <button
@@ -543,11 +676,12 @@ export function StatusBar() {
           rel="noopener noreferrer"
           aria-label={`Star Cabinet on GitHub (${formatGithubStars(githubStars)} stars)`}
           title={`Star on GitHub (${formatGithubStars(githubStars)} stars)`}
-          className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-amber-700 transition-all hover:-translate-y-px hover:border-amber-500/35 hover:bg-amber-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-1 dark:text-amber-300"
+          className="relative inline-flex items-center gap-1.5 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-amber-700 transition-all hover:-translate-y-px hover:border-amber-500/35 hover:bg-amber-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-1 dark:text-amber-300"
         >
+          {starsExploding && <StarExplosion />}
           <Star className="h-3.5 w-3.5 fill-current" />
           <span className="text-[10px] font-semibold tracking-[0.04em] text-foreground">
-            {formatGithubStars(githubStars)} stars
+            {formatGithubStars(displayStars || githubStars)} stars
           </span>
         </a>
       </div>

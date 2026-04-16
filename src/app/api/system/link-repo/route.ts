@@ -3,6 +3,7 @@ import path from "path";
 import yaml from "js-yaml";
 import simpleGit from "simple-git";
 import { NextRequest, NextResponse } from "next/server";
+import { CABINET_LINK_META_FILE } from "@/lib/cabinets/files";
 import {
   resolveContentPath,
   sanitizeFilename,
@@ -117,8 +118,8 @@ export async function POST(req: NextRequest) {
     const source = remote ? "both" : "local";
     const description = body.description?.trim() || undefined;
 
-    // Write .cabinet.yaml into the target directory
-    const cabinetYamlPath = path.join(localPath, ".cabinet.yaml");
+    // Write linked-folder metadata into the target directory.
+    const cabinetMetaPath = path.join(localPath, CABINET_LINK_META_FILE);
     const cabinetMeta = {
       title: derivedName,
       tags: isRepo ? ["repo"] : ["knowledge"],
@@ -126,10 +127,10 @@ export async function POST(req: NextRequest) {
       ...(description ? { description } : {}),
     };
     await writeFileContent(
-      cabinetYamlPath,
+      cabinetMetaPath,
       yaml.dump(cabinetMeta, { lineWidth: -1, noRefs: true })
     );
-    writtenFiles.push(cabinetYamlPath);
+    writtenFiles.push(cabinetMetaPath);
 
     // Write .repo.yaml into the target directory (for git repos, skip if already exists)
     let warning: string | undefined;

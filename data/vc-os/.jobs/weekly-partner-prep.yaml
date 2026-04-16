@@ -1,0 +1,23 @@
+id: weekly-partner-prep
+name: Weekly Partner Meeting Prep
+enabled: true
+schedule: 0 18 * * 1
+provider: claude-code
+ownerAgent: managing-partner
+agentSlug: managing-partner
+timeout: 600
+prompt: |-
+  It's Monday evening at Warp Ventures. Partners meet every Wednesday at 9:00 AM PT.
+
+  Prepare a crisp partner meeting agenda and pre-read document. Review:
+  1. The deal-flow pipeline (deal-flow/active-deals.csv) — note any deals that need a decision or update
+  2. The portfolio pages — check each company's metrics.csv for any metrics that look off
+  3. The intelligence/daily-brief.md — pull the top 3 signals from the past week
+  4. The events page — note what's coming up in the next 2 weeks
+
+  Write the meeting prep as a new dated section in team/index.md under a "Weekly Partner Meeting" heading.
+  Format: date, agenda items (numbered), decisions needed (bullet), and FYI items (bullet).
+  Keep it to 1 page — partners read this in 5 minutes.
+cabinetPath: vc-os
+createdAt: '2026-04-13T00:00:00.000Z'
+updatedAt: '2026-04-13T00:00:00.000Z'

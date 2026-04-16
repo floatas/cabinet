@@ -1,7 +1,8 @@
 import type { TreeNode, PageData, FrontMatter } from "@/types";
 
-export async function fetchTree(): Promise<TreeNode[]> {
-  const res = await fetch("/api/tree");
+export async function fetchTree(showHidden = false): Promise<TreeNode[]> {
+  const url = showHidden ? "/api/tree?showHidden=1" : "/api/tree";
+  const res = await fetch(url);
   if (!res.ok) throw new Error("Failed to fetch tree");
   return res.json();
 }

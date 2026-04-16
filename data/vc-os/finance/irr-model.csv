@@ -1,0 +1,16 @@
+Company,Invested,Current_Est_Value,Entry_Valuation,Current_Valuation_Est,Multiple_Est,Gross_IRR_Est,Investment_Date,Scenario,Notes
+MintLayer,25000000,45000000,60000000,120000000,1.8,34,2024-06-01,Base,Series C at $120M pre expected Q3 2026
+MintLayer,25000000,65000000,60000000,180000000,2.6,55,2024-06-01,Bull,Strong EU expansion + 140% NRR
+MintLayer,25000000,20000000,60000000,55000000,0.8,negative,2024-06-01,Bear,Macro downturn + Axon Finance competition
+NeuralFlow,18000000,25200000,40000000,65000000,1.4,29,2024-09-01,Base,Series B at $65M pre
+NeuralFlow,18000000,45000000,40000000,100000000,2.5,51,2024-09-01,Bull,Vertical pivot works; legal automation breakout
+NeuralFlow,18000000,9000000,40000000,25000000,0.5,negative,2024-09-01,Bear,OpenAI Assistants captures enterprise market
+GreenPulse,15000000,19500000,35000000,52000000,1.3,21,2024-11-01,Base,EU Article 9 drives 2x revenue in 12 months
+GreenPulse,15000000,37500000,35000000,90000000,2.5,46,2024-11-01,Bull,DOE grant + EU expansion + VCM price recovery
+GreenPulse,15000000,9000000,35000000,24000000,0.6,negative,2024-11-01,Bear,Carbon market collapse; regulation delayed
+DevForge,5000000,10500000,10000000,22000000,2.1,87,2025-02-01,Base,GitHub Actions campaign drives Series A
+DevForge,5000000,18000000,10000000,40000000,3.6,126,2025-02-01,Bull,Category leader developer portal play
+DevForge,5000000,2000000,10000000,4500000,0.4,negative,2025-02-01,Bear,GitHub Copilot+ expands to kill DevForge market
+DataStream,4000000,6400000,12000000,20000000,1.6,53,2025-04-01,Base,Series A at $60M pre
+DataStream,4000000,12000000,12000000,40000000,3.0,91,2025-04-01,Bull,Databricks acquisition at premium
+DataStream,4000000,2000000,12000000,6500000,0.5,negative,2025-04-01,Bear,Databricks builds natively; market consolidates

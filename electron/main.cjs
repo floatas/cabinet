@@ -18,9 +18,10 @@ if (!gotSingleInstanceLock) {
 
 const isDev = !app.isPackaged;
 const managedDataDir = path.join(app.getPath("userData"), "cabinet-data");
-const updateStatusPath = path.join(managedDataDir, ".cabinet", "update-status.json");
+const updateStatusPath = path.join(managedDataDir, ".cabinet-state", "update-status.json");
 let mainWindow = null;
 let backendChildren = [];
+const DEV_APP_DISCOVERY_TIMEOUT_MS = 45_000;
 
 function writeUpdateStatus(status) {
   fs.mkdirSync(path.dirname(updateStatusPath), { recursive: true });
@@ -60,6 +61,18 @@ async function waitForHealth(url, timeoutMs = 45_000) {
   }
 
   throw new Error(`Timed out waiting for Cabinet at ${url}`);
+}
+
+async function checkHealth(url, timeoutMs = 1200) {
+  try {
+    const response = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 function spawnBackend(command, args, env) {
@@ -181,10 +194,62 @@ function ensureManagedData() {
   seedDefaultContent();
 }
 
+function readDevAppUrlFromRuntime() {
+  try {
+    const runtimePath = path.join(process.cwd(), "data", ".cabinet-state", "runtime-ports.json");
+    const raw = fs.readFileSync(runtimePath, "utf8");
+    const parsed = JSON.parse(raw);
+    const origin = parsed?.app?.origin;
+    return typeof origin === "string" && origin.trim() ? origin.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function getDevAppCandidates() {
+  const candidates = new Set();
+  const explicit = process.env.ELECTRON_START_URL?.trim();
+  if (explicit) {
+    candidates.add(explicit.replace(/\/+$/, ""));
+  }
+
+  const runtimeUrl = readDevAppUrlFromRuntime();
+  if (runtimeUrl) {
+    candidates.add(runtimeUrl);
+  }
+
+  for (let port = 4000; port <= 4010; port += 1) {
+    candidates.add(`http://127.0.0.1:${port}`);
+    candidates.add(`http://localhost:${port}`);
+  }
+
+  return [...candidates];
+}
+
+async function resolveDevAppUrl(timeoutMs = DEV_APP_DISCOVERY_TIMEOUT_MS) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const candidates = getDevAppCandidates();
+
+    for (const candidate of candidates) {
+      if (await checkHealth(`${candidate}/api/health`, 500)) {
+        return candidate;
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 750));
+  }
+
+  throw new Error(
+    "Timed out waiting for a local Cabinet dev app. Start `npm run dev` first."
+  );
+}
+
 async function startEmbeddedCabinet() {
   if (isDev) {
     return {
-      appUrl: process.env.ELECTRON_START_URL || "http://127.0.0.1:3000",
+      appUrl: await resolveDevAppUrl(),
     };
   }
 
@@ -333,6 +398,28 @@ async function createWindow() {
       sandbox: false,
     },
   });
+
+  if (isDev) {
+    mainWindow.webContents.on("did-fail-load", async (_event, errorCode, errorDescription) => {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return;
+      }
+
+      if (errorCode === -3) {
+        return;
+      }
+
+      try {
+        const nextUrl = await resolveDevAppUrl(15_000);
+        await mainWindow.loadURL(nextUrl);
+      } catch {
+        dialog.showErrorBox(
+          "Cabinet Dev Server Unavailable",
+          `Electron could not reach the local Cabinet dev app.\n\nLast Chromium error: ${errorDescription} (${errorCode})\n\nStart \`npm run dev\` and try again.`
+        );
+      }
+    });
+  }
 
   await mainWindow.loadURL(runtime.appUrl);
 }

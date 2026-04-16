@@ -27,6 +27,8 @@ export async function GET() {
           icon: p.icon,
           installMessage: p.installMessage,
           installSteps: p.installSteps,
+          models: p.models || [],
+          effortLevels: p.effortLevels || [],
           enabled: isProviderEnabled(p.id, settings),
           usage: usage[p.id] || {
             agentSlugs: [],
@@ -43,6 +45,8 @@ export async function GET() {
     return NextResponse.json({
       providers: results,
       defaultProvider: getConfiguredDefaultProviderId(settings),
+      defaultModel: settings.defaultModel || null,
+      defaultEffort: settings.defaultEffort || null,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -58,6 +62,14 @@ export async function PUT(req: Request) {
         typeof body.defaultProvider === "string"
           ? body.defaultProvider
           : providerRegistry.defaultProvider,
+      defaultModel:
+        typeof body.defaultModel === "string"
+          ? body.defaultModel
+          : undefined,
+      defaultEffort:
+        typeof body.defaultEffort === "string"
+          ? body.defaultEffort
+          : undefined,
       disabledProviderIds: Array.isArray(body.disabledProviderIds)
         ? body.disabledProviderIds.filter((value: unknown): value is string => typeof value === "string")
         : [],

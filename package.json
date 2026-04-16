@@ -1,12 +1,12 @@
 {
   "name": "cabinet",
-  "version": "0.2.12",
+  "version": "0.3.4",
   "private": true,
   "main": "electron/main.cjs",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/dev-next.mjs",
     "dev:terminal": "tsx server/terminal-server.ts",
-    "dev:daemon": "tsx server/cabinet-daemon.ts",
+    "dev:daemon": "node scripts/dev-daemon.mjs",
     "dev:all": "npm run dev & npm run dev:daemon",
     "debug:chrome": "bash scripts/launch-chrome-debug.sh",
     "build": "next build",
@@ -20,7 +20,7 @@
     "electron:make": "npm run build && npm run electron:prep && electron-forge make",
     "lint": "eslint",
     "test:unit": "tsx --test test/update-system.test.ts",
-    "test": "tsx --test src/lib/agents/**/*.test.ts",
+    "test": "tsx --test test/*.test.ts",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper 2>/dev/null; xattr -d com.apple.provenance node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper 2>/dev/null; xattr -d com.apple.provenance node_modules/node-pty/prebuilds/darwin-arm64/pty.node 2>/dev/null; true"
   },
   "dependencies": {

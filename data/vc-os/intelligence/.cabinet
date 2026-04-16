@@ -1,0 +1,15 @@
+schemaVersion: 1
+id: vc-os-intelligence
+name: Intelligence Hub
+kind: child
+version: 0.1.0
+description: Daily intelligence operation — X/Twitter watchlists, morning briefs, market maps, and the live signal feed across AI, climate, DevTools, SaaS, and crypto themes.
+entry: index.md
+
+parent:
+  shared_context:
+    - /index.md
+    - /portfolio/index.md
+
+access:
+  mode: subtree-plus-parent-brief

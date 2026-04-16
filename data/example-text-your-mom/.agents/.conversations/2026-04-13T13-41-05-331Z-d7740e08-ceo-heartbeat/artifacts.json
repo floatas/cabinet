@@ -1,0 +1,23 @@
+[
+  {
+    "path": "company/goals/index.md"
+  },
+  {
+    "path": "company/finance/index.md"
+  },
+  {
+    "path": "company/team/index.md"
+  },
+  {
+    "path": "marketing/tiktok/.jobs/daily-trend-scan.yaml"
+  },
+  {
+    "path": "marketing/tiktok/.jobs/daily-creative-queue.yaml"
+  },
+  {
+    "path": "marketing/reddit/.jobs/subreddit-signal-scan.yaml"
+  },
+  {
+    "path": "marketing/reddit/.jobs/comment-opportunity-scan.yaml"
+  }
+]

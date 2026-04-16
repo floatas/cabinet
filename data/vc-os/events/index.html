@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Warp Ventures — Events Calendar</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f5f7fa;
+    --surface: #ffffff;
+    --surface2: #eef2f7;
+    --border: #dde3ed;
+    --accent: #6d4fe8;
+    --accent2: #0ea5e9;
+    --text: #111827;
+    --muted: #6b7280;
+    --green: #16a34a;
+    --orange: #ea580c;
+    --red: #dc2626;
+    --pink: #db2777;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif; min-height: 100vh; }
+
+  .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .header h1 { font-size: 16px; font-weight: 600; color: var(--text); letter-spacing: -0.3px; }
+  .header h1 span { color: var(--accent); }
+  .nav-month { display: flex; align-items: center; gap: 12px; }
+  .nav-month button { background: var(--surface2); border: 1px solid var(--border); color: var(--text); width: 32px; height: 32px; border-radius: 6px; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; transition: background 0.15s; }
+  .nav-month button:hover { background: var(--border); }
+  .nav-month .month-label { font-size: 15px; font-weight: 600; min-width: 160px; text-align: center; }
+
+  .legend { padding: 12px 24px; display: flex; gap: 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  .calendar-grid { padding: 20px 24px; }
+  .day-headers { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 8px; }
+  .day-header { text-align: center; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; padding: 6px 0; letter-spacing: 0.5px; }
+  .weeks { display: grid; gap: 4px; }
+  .week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .day-cell { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; min-height: 100px; padding: 8px 6px; cursor: pointer; transition: border-color 0.15s; position: relative; }
+  .day-cell:hover { border-color: var(--accent); }
+  .day-cell.other-month { opacity: 0.3; }
+  .day-cell.today { border-color: var(--accent); }
+  .day-cell.today .day-number { background: var(--accent); color: #fff; border-radius: 50%; }
+  .day-number { font-size: 12px; font-weight: 600; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 4px; color: var(--text); }
+  .event-chip { font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-bottom: 2px; font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
+
+  .event-cat-lp { background: rgba(109,79,232,0.12); color: #5b3ed6; }
+  .event-cat-portfolio { background: rgba(14,165,233,0.12); color: #0284c7; }
+  .event-cat-conference { background: rgba(234,88,12,0.12); color: #c2410c; }
+  .event-cat-board { background: rgba(22,163,74,0.12); color: #15803d; }
+  .event-cat-team { background: rgba(219,39,119,0.12); color: #be185d; }
+  .event-cat-fund { background: rgba(220,38,38,0.12); color: #b91c1c; }
+
+  .sidebar { position: fixed; right: 0; top: 0; width: 340px; height: 100vh; background: var(--surface); border-left: 1px solid var(--border); padding: 20px; overflow-y: auto; transform: translateX(100%); transition: transform 0.25s; z-index: 10; }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar-close { position: absolute; top: 16px; right: 16px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; }
+  .sidebar h2 { font-size: 14px; font-weight: 600; margin-bottom: 16px; padding-right: 32px; }
+  .event-detail { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+  .event-detail-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .event-detail-meta { font-size: 11px; color: var(--muted); line-height: 1.6; }
+  .event-detail-badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 12px; font-weight: 600; margin-bottom: 8px; }
+
+  @media (max-width: 700px) {
+    .day-cell { min-height: 60px; }
+    .header { flex-wrap: wrap; gap: 10px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⚡ <span>Warp Ventures</span> — Events Calendar</h1>
+  <div class="nav-month">
+    <button onclick="prevMonth()">‹</button>
+    <div class="month-label" id="monthLabel"></div>
+    <button onclick="nextMonth()">›</button>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#6d4fe8"></div> LP / Fund</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#0284c7"></div> Portfolio</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ea580c"></div> Conference</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#16a34a"></div> Board Meeting</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#db2777"></div> Team</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#dc2626"></div> Fund Ops</div>
+</div>
+
+<div class="calendar-grid">
+  <div class="day-headers">
+    <div class="day-header">Sun</div><div class="day-header">Mon</div>
+    <div class="day-header">Tue</div><div class="day-header">Wed</div>
+    <div class="day-header">Thu</div><div class="day-header">Fri</div>
+    <div class="day-header">Sat</div>
+  </div>
+  <div class="weeks" id="calendarWeeks"></div>
+</div>
+
+<div class="sidebar" id="sidebar">
+  <button class="sidebar-close" onclick="closeSidebar()">✕</button>
+  <h2 id="sidebarDate"></h2>
+  <div id="sidebarEvents"></div>
+</div>
+
+<script>
+const EVENTS = [
+  // April 2026
+  { date: '2026-04-14', title: 'NeuralFlow Pre-Board Read', cat: 'board', detail: 'Partners review pre-read materials before Wednesday board meeting. Jordan leading.', time: 'EOD' },
+  { date: '2026-04-15', title: 'NeuralFlow Board Call', cat: 'board', detail: 'Quarterly board meeting — growth metrics, Series B prep discussion, team updates.', time: '10:00 AM PT' },
+  { date: '2026-04-16', title: 'SaaStr Speaker Prep', cat: 'conference', detail: 'Maya prepping for SaaStr keynote panel on "AI-native SaaS at Series A"', time: '2:00 PM PT' },
+  { date: '2026-04-18', title: 'Q1 LP Letter Due', cat: 'lp', detail: 'CFO sends draft to GPs. Maya + Jordan to sign off by April 20.', time: 'EOD' },
+  { date: '2026-04-21', title: 'DevForge Monthly Sync', cat: 'portfolio', detail: 'Operational sync with DevForge CEO. Focus: GitHub Actions refugee campaign launch.', time: '11:00 AM PT' },
+  { date: '2026-04-22', title: 'Partner Meeting — Wednesday', cat: 'team', detail: 'Weekly partner meeting. New deal reviews: 2 DevTools inbounds.', time: '9:00 AM PT' },
+  { date: '2026-04-24', title: 'SaaStr Annual 2026', cat: 'conference', detail: '3-day conference. Maya keynote (Day 1). Sam running 8 1:1 meetings with portfolio prospects.', time: 'All day' },
+  { date: '2026-04-25', title: 'SaaStr Day 2', cat: 'conference', detail: 'MintLayer CEO presenting on "AI-native Finance Operations" stage.', time: 'All day' },
+  { date: '2026-04-26', title: 'SaaStr Day 3', cat: 'conference', detail: 'Final day. LP dinner in the evening — Jordan hosting 6 institutional LPs.', time: 'All day' },
+  { date: '2026-04-28', title: 'GreenPulse EU Pipeline Review', cat: 'portfolio', detail: 'Rafael reviewing 3 new EU enterprise prospects for GreenPulse post-Article 9 passage.', time: '1:00 PM PT' },
+  { date: '2026-04-30', title: 'Capital Call — Fund II', cat: 'fund', detail: 'Fund II Capital Call #4. $8.2M. 12 LPs. Wire deadline May 5.', time: 'All day' },
+
+  // May 2026
+  { date: '2026-05-01', title: 'MintLayer Board Call', cat: 'board', detail: 'Series B roadmap review. ARR trajectory and NRR improvement plan.', time: '10:00 AM PT' },
+  { date: '2026-05-05', title: 'Capital Call Wire Deadline', cat: 'fund', detail: 'LP wire deadline for CC#4. CFO monitoring incoming transfers.', time: 'EOD' },
+  { date: '2026-05-07', title: 'LP Investor Day — NYC', cat: 'lp', detail: 'Annual LP Investor Day at Warp NYC office. 14 LPs attending. Portfolio company demos.', time: '9:00 AM ET' },
+  { date: '2026-05-08', title: 'LP Investor Day Day 2', cat: 'lp', detail: 'Day 2: Portfolio breakout sessions. NeuralFlow and DevForge presenting.', time: '9:00 AM ET' },
+  { date: '2026-05-12', title: 'DataStream Series A Kickoff', cat: 'portfolio', detail: 'DataStream beginning Series A process. Jordan leading from Warp side. $15M target raise.', time: '11:00 AM PT' },
+  { date: '2026-05-14', title: 'Warp Ventures Fellowship Demo Day', cat: 'team', detail: 'Fellowship Cohort 2 Demo Day. 8 fellows presenting. 3 strong candidates for potential deals.', time: '2:00 PM PT' },
+  { date: '2026-05-15', title: 'DOE Grant Deadline', cat: 'fund', detail: 'SBIR Phase I deadline for GreenPulse DOE grant application.', time: 'EOD' },
+  { date: '2026-05-19', title: 'Partner Meeting', cat: 'team', detail: 'Weekly partners. Q2 thesis refresh discussion — AI infrastructure positioning.', time: '9:00 AM PT' },
+  { date: '2026-05-20', title: 'DevForge Board Call', cat: 'board', detail: 'Q2 pipeline review. GitHub Actions market opportunity sizing.', time: '2:00 PM PT' },
+  { date: '2026-05-22', title: 'Collision Conference', cat: 'conference', detail: 'Sam and Priya attending. 12 company meetings scheduled. Climate Tech track focus.', time: 'All day' },
+  { date: '2026-05-27', title: 'Q1 Audited Financials Due', cat: 'fund', detail: 'Auditor delivers Q1 Fund II financial statements.', time: 'EOD' },
+
+  // June 2026
+  { date: '2026-06-02', title: 'NeuralFlow Series B LOI', cat: 'portfolio', detail: 'Reviewing Letter of Intent from lead investors. Jordan leading Warp participation decision.', time: 'All day' },
+  { date: '2026-06-09', title: 'GreenPulse Board Call', cat: 'board', detail: 'EU enterprise pipeline update. DOE grant results. Carbon credit market positioning.', time: '11:00 AM PT' },
+  { date: '2026-06-15', title: 'Mid-Year Portfolio Review', cat: 'team', detail: 'Full partner + principals day. Portfolio health review across all 5 Fund II companies.', time: '9:00 AM PT' },
+  { date: '2026-06-17', title: 'TC Disrupt 2026', cat: 'conference', detail: 'TechCrunch Disrupt. Maya on Startup Battlefield judging panel.', time: 'All day' },
+  { date: '2026-06-30', title: 'H1 LP Report Due', cat: 'lp', detail: 'Semi-annual LP report. CFO drafting. NAV update, portfolio progress, fund deployment pace.', time: 'EOD' },
+];
+
+let currentYear = 2026;
+let currentMonth = 3; // April (0-indexed)
+
+function renderCalendar() {
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  document.getElementById('monthLabel').textContent = months[currentMonth] + ' ' + currentYear;
+
+  const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+  const daysInPrev = new Date(currentYear, currentMonth, 0).getDate();
+
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
+  let cells = [];
+  for (let i = firstDay - 1; i >= 0; i--) {
+    cells.push({ day: daysInPrev - i, month: currentMonth - 1, year: currentYear, other: true });
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push({ day: d, month: currentMonth, year: currentYear, other: false });
+  }
+  while (cells.length % 7 !== 0) {
+    cells.push({ day: cells.length - firstDay - daysInMonth + 1, month: currentMonth + 1, year: currentYear, other: true });
+  }
+
+  const weeksEl = document.getElementById('calendarWeeks');
+  weeksEl.innerHTML = '';
+  for (let w = 0; w < cells.length / 7; w++) {
+    const weekEl = document.createElement('div');
+    weekEl.className = 'week';
+    for (let d = 0; d < 7; d++) {
+      const cell = cells[w * 7 + d];
+      const m = cell.other ? cell.month : currentMonth;
+      const y = cell.year;
+      const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(cell.day).padStart(2,'0')}`;
+      const dayEvents = EVENTS.filter(e => e.date === dateStr);
+      const isToday = dateStr === todayStr;
+
+      const cellEl = document.createElement('div');
+      cellEl.className = 'day-cell' + (cell.other ? ' other-month' : '') + (isToday ? ' today' : '');
+      cellEl.onclick = () => showDay(dateStr, cell.day);
+
+      const numEl = document.createElement('div');
+      numEl.className = 'day-number';
+      numEl.textContent = cell.day;
+      cellEl.appendChild(numEl);
+
+      dayEvents.forEach(ev => {
+        const chip = document.createElement('div');
+        chip.className = `event-chip event-cat-${ev.cat}`;
+        chip.textContent = ev.title;
+        chip.title = ev.detail;
+        cellEl.appendChild(chip);
+      });
+
+      weekEl.appendChild(cellEl);
+    }
+    weeksEl.appendChild(weekEl);
+  }
+}
+
+function showDay(dateStr, day) {
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const dayEvents = EVENTS.filter(e => e.date === dateStr);
+  document.getElementById('sidebarDate').textContent = months[currentMonth] + ' ' + day + ', ' + currentYear;
+  const evContainer = document.getElementById('sidebarEvents');
+  if (dayEvents.length === 0) {
+    evContainer.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px 0;text-align:center;">No events scheduled</div>';
+  } else {
+    evContainer.innerHTML = dayEvents.map(ev => `
+      <div class="event-detail">
+        <div class="event-detail-badge event-cat-${ev.cat}">${ev.cat.toUpperCase()}</div>
+        <div class="event-detail-title">${ev.title}</div>
+        <div class="event-detail-meta">
+          <strong>Time:</strong> ${ev.time}<br/>
+          ${ev.detail}
+        </div>
+      </div>
+    `).join('');
+  }
+  document.getElementById('sidebar').classList.add('open');
+}
+
+function closeSidebar() { document.getElementById('sidebar').classList.remove('open'); }
+function prevMonth() { currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; } renderCalendar(); }
+function nextMonth() { currentMonth++; if (currentMonth > 11) { currentMonth = 0; currentYear++; } renderCalendar(); }
+
+renderCalendar();
+</script>
+</body>
+</html>

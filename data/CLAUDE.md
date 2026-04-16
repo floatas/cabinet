@@ -39,6 +39,27 @@ order: 1
 - Use markdown tables for structured data (they render properly in the UI)
 - Keep page titles concise and descriptive
 
+## Supported File Types
+
+Cabinet renders the following file types as first-class views in the sidebar:
+
+| Type | Extensions / trigger | Rendered as |
+|------|---------------------|-------------|
+| Markdown | `*.md` | WYSIWYG editor |
+| CSV | `*.csv` | Interactive table editor |
+| PDF | `*.pdf` | Inline PDF viewer |
+| Mermaid | `*.mermaid`, `*.mmd` | Rendered diagram |
+| Image | `.png .jpg .jpeg .gif .webp .svg .avif .ico` | Inline image viewer |
+| Video | `.mp4 .webm .mov .m4v` | Inline video player |
+| Audio | `.mp3 .wav .ogg .m4a .aac` | Inline audio player |
+| Code | `.js .ts .py .go .swift .yaml .json` + many more | Syntax-highlighted viewer |
+| Embedded website | Directory with `index.html`, no `index.md` | Iframe (sidebar visible) |
+| Full-screen app | Directory with `index.html` + `.app` marker | Full-screen iframe |
+| Linked repo | Directory with `.repo.yaml` | Normal page, repo context for agents |
+| Office / archive | `.docx .pptx .xlsx .zip .fig .sketch` + more | Shown in sidebar, opens in Finder |
+
+Any file not in the above sets is silently skipped (not shown in the sidebar).
+
 ## Embedded Apps (`.app` marker)
 
 Any directory under `/data/` that contains an `index.html` **and no `index.md`** is rendered as an embedded website in an iframe.
@@ -72,7 +93,7 @@ The symlinked folder's contents appear as direct children in the tree — no wra
 
 Cabinet writes two hidden dotfiles into the **target directory**:
 
-### `.cabinet.yaml` (all linked dirs)
+### `.cabinet-meta` (all linked dirs)
 Display metadata for the KB. Hidden from the sidebar by `isHiddenEntry`.
 
 ```yaml
@@ -112,7 +133,7 @@ When an agent is working on a KB page that has a `.repo.yaml` in the same direct
 **Example structure:**
 ```
 /data/
-  my-project -> /external/path    ← direct symlink (has .cabinet.yaml + .repo.yaml inside)
+  my-project -> /external/path    ← direct symlink (has .cabinet-meta + .repo.yaml inside)
   gpu-emulator/
     index.html          ← the app
     .app                ← full-screen mode

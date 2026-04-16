@@ -12,6 +12,18 @@ export interface CliProviderInvocation {
   readyStrategy?: "claude";
 }
 
+export interface ProviderModel {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export interface ProviderEffortLevel {
+  id: string;
+  name: string;
+  description?: string;
+}
+
 export interface AgentProvider {
   id: string;
   name: string;
@@ -19,6 +31,9 @@ export interface AgentProvider {
   icon: string;
   installMessage?: string;
   installSteps?: Array<{ title: string; detail: string; link?: { label: string; url: string } }>;
+  models?: ProviderModel[];
+  effortLevels?: ProviderEffortLevel[];
+  detachedPromptLaunchMode?: "session" | "one-shot";
 
   // CLI providers
   command?: string;

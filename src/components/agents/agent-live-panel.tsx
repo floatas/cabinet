@@ -274,7 +274,7 @@ export function AgentLivePanel({ persona, onBack }: AgentLivePanelProps) {
             >
               <div className="flex items-center gap-2 shrink-0">
                 <div className="bg-accent/50 rounded-lg px-3 py-2 text-[13px] leading-relaxed flex-1 flex items-center gap-2">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-500 shrink-0" />
                   Heartbeat running…
                 </div>
                 <button

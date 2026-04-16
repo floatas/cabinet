@@ -190,6 +190,15 @@ html[data-custom-theme] .tiptap h4 {
   }
 }
 
+/* Agent card glow for running status */
+@keyframes cabinet-card-glow {
+  0%, 100% { box-shadow: 0 0 8px -2px rgba(16,185,129,0.15); }
+  50% { box-shadow: 0 0 16px -2px rgba(16,185,129,0.3); }
+}
+.animate-cabinet-card-glow {
+  animation: cabinet-card-glow 2s ease-in-out infinite;
+}
+
 /* Body serif — Source Serif 4, beats theme overrides */
 html[data-custom-theme] .font-body-serif,
 .font-body-serif {
@@ -550,3 +559,82 @@ html[data-custom-theme] .font-logo,
 .electron-desktop .sidebar-header {
   padding-left: 80px;
 }
+
+/* ── GitHub stars burst animation ── */
+@keyframes cabinet-star-burst {
+  0%   { transform: translate(-50%, -50%) translate(0px, 0px) scale(1.6); opacity: 1; }
+  60%  { opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) translate(var(--sb-x, 20px), var(--sb-y, 0px)) scale(0); opacity: 0; }
+}
+
+/* ── Registry prose (markdown viewer in registry detail About section) ── */
+.registry-prose {
+  font-size: 0.875rem;
+  line-height: 1.8;
+  color: var(--prose-body, #6b5b4e);
+}
+.registry-prose h1,
+.registry-prose h2,
+.registry-prose h3,
+.registry-prose h4 {
+  color: var(--prose-heading, #3b2f2f);
+  font-weight: 700;
+  margin-top: 2em;
+  margin-bottom: 0.5em;
+  line-height: 1.3;
+}
+.registry-prose h1 { font-size: 1.3rem; }
+.registry-prose h2 { font-size: 1.05rem; letter-spacing: -0.01em; }
+.registry-prose h3 { font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.registry-prose p { margin-top: 0; margin-bottom: 1em; }
+.registry-prose ul {
+  list-style-type: disc;
+  padding-left: 1.4em;
+  margin-bottom: 1em;
+}
+.registry-prose ol {
+  list-style-type: decimal;
+  padding-left: 1.4em;
+  margin-bottom: 1em;
+}
+.registry-prose li {
+  margin-bottom: 0.4em;
+  padding-left: 0.15em;
+}
+.registry-prose ul li::marker { color: var(--prose-link, #8b5e3c); }
+.registry-prose code {
+  font-size: 0.8125rem;
+  font-family: var(--font-mono, monospace);
+  background: var(--prose-code-bg, #f3ede4);
+  padding: 0.15em 0.45em;
+  border-radius: 4px;
+  color: var(--prose-heading, #3b2f2f);
+}
+.registry-prose pre {
+  background: var(--prose-code-bg, #f3ede4);
+  border: 1px solid var(--prose-border, #e8ddd0);
+  border-radius: 8px;
+  padding: 1em;
+  overflow-x: auto;
+  margin-bottom: 0.75em;
+}
+.registry-prose pre code { background: none; padding: 0; }
+.registry-prose a {
+  color: var(--prose-link, #8b5e3c);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.registry-prose hr {
+  border: none;
+  border-top: 1px solid var(--prose-border, #e8ddd0);
+  margin: 1.5em 0;
+}
+.registry-prose blockquote {
+  border-left: 3px solid var(--prose-border, #e8ddd0);
+  padding-left: 1em;
+  margin-left: 0;
+  color: var(--prose-body, #6b5b4e);
+  opacity: 0.8;
+}
+.registry-prose > *:first-child { margin-top: 0; }
+.registry-prose > *:last-child { margin-bottom: 0; }

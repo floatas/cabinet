@@ -4,8 +4,12 @@ import {
   buildManualConversationPrompt,
   startConversationRun,
 } from "@/lib/agents/conversation-runner";
+import { buildConversationInstanceKey } from "@/lib/agents/conversation-identity";
 import { listConversationMetas } from "@/lib/agents/conversation-store";
 import { readMemory, writeMemory } from "@/lib/agents/persona-manager";
+import { readCabinetOverview } from "@/lib/cabinets/overview";
+import { findOwningCabinetPathForPage } from "@/lib/cabinets/server-paths";
+import type { CabinetVisibilityMode } from "@/types/cabinets";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -22,13 +26,51 @@ export async function GET(req: NextRequest) {
     | "failed"
     | "cancelled"
     | null;
+  const cabinetPath = searchParams.get("cabinetPath") || undefined;
+  const visibilityMode = (searchParams.get("visibilityMode") || "own") as CabinetVisibilityMode;
   const limit = parseInt(searchParams.get("limit") || "200", 10);
 
-  const conversations = await listConversationMetas({
+  const filters = {
     agentSlug: agentSlug && agentSlug !== "all" ? agentSlug : undefined,
     pagePath: pagePath || undefined,
     trigger: trigger || undefined,
     status: status || undefined,
+    limit: 1000,
+  };
+
+  // When viewing a cabinet with visibility that includes descendants, aggregate
+  // conversations from all visible cabinet directories.
+  if (cabinetPath && visibilityMode !== "own") {
+    try {
+      const overview = await readCabinetOverview(cabinetPath, { visibilityMode });
+      const visiblePaths = overview.visibleCabinets.map((c) => c.path);
+
+      const all = await Promise.all(
+        visiblePaths.map((cp) => listConversationMetas({ ...filters, cabinetPath: cp }))
+      );
+
+      const deduped = new Map<string, (typeof all)[number][number]>();
+      for (const conversation of all.flat()) {
+        const key = buildConversationInstanceKey(conversation);
+        if (!deduped.has(key)) {
+          deduped.set(key, conversation);
+        }
+      }
+
+      const merged = Array.from(deduped.values());
+      merged.sort(
+        (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+      );
+
+      return NextResponse.json({ conversations: merged.slice(0, limit) });
+    } catch {
+      // Fall through to single-cabinet fetch on error
+    }
+  }
+
+  const conversations = await listConversationMetas({
+    ...filters,
+    cabinetPath,
     limit,
   });
 
@@ -48,6 +90,10 @@ export async function POST(req: NextRequest) {
       typeof body.pagePath === "string" && body.pagePath.trim()
         ? body.pagePath.trim()
         : undefined;
+    const cabinetPath =
+      typeof body.cabinetPath === "string" && body.cabinetPath.trim()
+        ? body.cabinetPath.trim()
+        : undefined;
 
     if (!userMessage) {
       return NextResponse.json(
@@ -63,18 +109,29 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const editorCabinetPath =
+      source === "editor" && pagePath
+        ? await findOwningCabinetPathForPage(pagePath)
+        : undefined;
+
     const conversationInput =
       source === "editor" && pagePath
         ? await buildEditorConversationPrompt({
             pagePath,
             userMessage,
             mentionedPaths,
+            cabinetPath: editorCabinetPath,
           })
         : await buildManualConversationPrompt({
             agentSlug,
             userMessage,
             mentionedPaths,
+            cabinetPath,
           });
+
+    const conversationCabinetPath =
+      editorCabinetPath ??
+      ("cabinetPath" in conversationInput ? conversationInput.cabinetPath : cabinetPath);
 
     const conversation = await startConversationRun({
       agentSlug,
@@ -87,12 +144,23 @@ export async function POST(req: NextRequest) {
           ? conversationInput.mentionedPaths
           : mentionedPaths,
       cwd: conversationInput.cwd,
+      cabinetPath: conversationCabinetPath,
       onComplete: async (completion) => {
         if (agentSlug === "general" || !completion.meta.contextSummary) return;
         const timestamp = new Date().toISOString();
-        const existingContext = await readMemory(agentSlug, "context.md");
+        const completionCabinetPath = completion.meta.cabinetPath || conversationCabinetPath;
+        const existingContext = await readMemory(
+          agentSlug,
+          "context.md",
+          completionCabinetPath
+        );
         const nextEntry = `\n\n## ${timestamp}\n${completion.meta.contextSummary}`;
-        await writeMemory(agentSlug, "context.md", existingContext + nextEntry);
+        await writeMemory(
+          agentSlug,
+          "context.md",
+          existingContext + nextEntry,
+          completionCabinetPath
+        );
       },
     });
 

@@ -47,7 +47,7 @@ export function NewPageDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         data-new-page-trigger
-        className="flex items-center gap-2 w-full text-sm px-3 py-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+        className="flex items-center gap-1.5 w-full text-xs px-2.5 py-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer whitespace-nowrap"
       >
         <Plus className="h-4 w-4" />
         New Page

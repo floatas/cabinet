@@ -3,9 +3,15 @@ import path from "path";
 import fs from "fs/promises";
 import matter from "gray-matter";
 import { DATA_DIR } from "@/lib/storage/path-utils";
+import { scaffoldCabinet } from "@/lib/storage/cabinet-scaffold";
+import {
+  MANDATORY_AGENT_SLUGS,
+  mergeMandatoryAgentSlugs,
+  resolveAgentLibraryDir,
+} from "@/lib/agents/library-manager";
+import { ensureAgentScaffold } from "@/lib/agents/scaffold";
 
 const AGENTS_DIR = path.join(DATA_DIR, ".agents");
-const LIBRARY_DIR = path.join(AGENTS_DIR, ".library");
 const CONFIG_DIR = path.join(AGENTS_DIR, ".config");
 const CHAT_DIR = path.join(DATA_DIR, ".chat");
 
@@ -23,7 +29,16 @@ interface OnboardingRequest {
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as OnboardingRequest;
-    const { answers, selectedAgents } = body;
+    const { answers } = body;
+    const selectedAgents = mergeMandatoryAgentSlugs(body.selectedAgents || []);
+    const libraryDir = await resolveAgentLibraryDir();
+
+    if (!libraryDir) {
+      return NextResponse.json(
+        { error: "Agent library is unavailable" },
+        { status: 500 }
+      );
+    }
 
     // 1. Save company config
     await fs.mkdir(CONFIG_DIR, { recursive: true });
@@ -46,7 +61,17 @@ export async function POST(req: NextRequest) {
       )
     );
 
-    // 2. Mark onboarding as complete
+    // 2. Bootstrap root cabinet structure (cabinet protocol compliance)
+    await scaffoldCabinet(DATA_DIR, {
+      name: answers.companyName,
+      kind: "root",
+      description: answers.description,
+      body: answers.description,
+      tags: ["company"],
+      skipExisting: true,
+    });
+
+    // 3. Mark onboarding as complete
     await fs.writeFile(
       path.join(CONFIG_DIR, "onboarding-complete.json"),
       JSON.stringify({ completed: true, date: new Date().toISOString() })
@@ -58,14 +83,20 @@ export async function POST(req: NextRequest) {
       JSON.stringify({ exists: true })
     ).catch(() => {});
 
-    // 3. Instantiate selected agents from library templates
+    // 4. Instantiate selected agents from library templates
     for (const slug of selectedAgents) {
-      const templateDir = path.join(LIBRARY_DIR, slug);
+      const templateDir = path.join(libraryDir, slug);
       const targetDir = path.join(AGENTS_DIR, slug);
 
       try {
         await fs.access(templateDir);
       } catch {
+        if (MANDATORY_AGENT_SLUGS.includes(slug as (typeof MANDATORY_AGENT_SLUGS)[number])) {
+          return NextResponse.json(
+            { error: `Required agent template "${slug}" is unavailable` },
+            { status: 500 }
+          );
+        }
         continue; // Template doesn't exist, skip
       }
 
@@ -79,11 +110,7 @@ export async function POST(req: NextRequest) {
 
       // Copy template
       await copyDir(templateDir, targetDir);
-
-      // Create standard subdirectories
-      for (const subdir of ["jobs", "skills", "sessions", "memory"]) {
-        await fs.mkdir(path.join(targetDir, subdir), { recursive: true });
-      }
+      await ensureAgentScaffold(targetDir);
 
       // Inject company context into persona.md
       const personaPath = path.join(targetDir, "persona.md");
@@ -102,7 +129,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 4. Create chat channels from all agent channel references
+    // 5. Create chat channels from all agent channel references
     await fs.mkdir(CHAT_DIR, { recursive: true });
 
     // Collect all channels referenced by agents + map members

@@ -14,9 +14,10 @@ interface TreeState {
   expandedPaths: Set<string>;
   loading: boolean;
   dragOverPath: string | null;
+  showHiddenFiles: boolean;
 
   loadTree: () => Promise<void>;
-  selectPage: (path: string) => void;
+  selectPage: (path: string | null) => void;
   toggleExpand: (path: string) => void;
   expandPath: (path: string) => void;
   createPage: (parentPath: string, title: string) => Promise<void>;
@@ -24,6 +25,8 @@ interface TreeState {
   movePage: (fromPath: string, toParentPath: string) => Promise<void>;
   renamePage: (path: string, newName: string) => Promise<void>;
   setDragOver: (path: string | null) => void;
+  setShowHiddenFiles: (show: boolean) => void;
+  toggleHiddenFiles: () => void;
 }
 
 function loadExpandedPaths(): Set<string> {
@@ -33,6 +36,15 @@ function loadExpandedPaths(): Set<string> {
     return stored ? new Set(JSON.parse(stored)) : new Set();
   } catch {
     return new Set();
+  }
+}
+
+function loadShowHiddenFiles(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem("kb-show-hidden-files") === "true";
+  } catch {
+    return false;
   }
 }
 
@@ -47,18 +59,20 @@ export const useTreeStore = create<TreeState>((set, get) => ({
   expandedPaths: loadExpandedPaths(),
   loading: false,
   dragOverPath: null,
+  showHiddenFiles: loadShowHiddenFiles(),
 
   loadTree: async () => {
     set({ loading: true });
     try {
-      const nodes = await fetchTree();
+      const { showHiddenFiles } = get();
+      const nodes = await fetchTree(showHiddenFiles);
       set({ nodes, loading: false });
     } catch {
       set({ loading: false });
     }
   },
 
-  selectPage: (path: string) => {
+  selectPage: (path: string | null) => {
     set({ selectedPath: path });
   },
 
@@ -138,5 +152,16 @@ export const useTreeStore = create<TreeState>((set, get) => ({
 
   setDragOver: (path: string | null) => {
     set({ dragOverPath: path });
+  },
+
+  setShowHiddenFiles: (show: boolean) => {
+    set({ showHiddenFiles: show });
+    localStorage.setItem("kb-show-hidden-files", String(show));
+    get().loadTree();
+  },
+
+  toggleHiddenFiles: () => {
+    const { showHiddenFiles } = get();
+    get().setShowHiddenFiles(!showHiddenFiles);
   },
 }));

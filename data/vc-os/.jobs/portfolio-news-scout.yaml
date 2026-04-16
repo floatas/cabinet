@@ -1,0 +1,32 @@
+id: portfolio-news-scout
+name: Portfolio Company News Scout
+enabled: true
+schedule: 0 8 * * 1-5
+provider: claude-code
+ownerAgent: portfolio-manager
+agentSlug: portfolio-manager
+timeout: 600
+prompt: |-
+  You are the Warp Ventures portfolio-manager agent. Scan for material developments at each Fund II company.
+
+  For each company, check for:
+  - Press coverage or media mentions
+  - Competitor moves that directly affect their market position
+  - Customer wins or losses based on public signals (job boards, G2, LinkedIn posts)
+  - Key hire or departure signals
+  - Regulatory or policy changes that affect their business
+
+  Portfolio companies to scan:
+  1. NeuralFlow (AI workflow automation) — watch for OpenAI/Microsoft/Anthropic enterprise moves
+  2. MintLayer (financial middleware for banks) — watch for Salesforce, banking regulation, fintech funding
+  3. GreenPulse (carbon monitoring hardware) — watch for EU climate policy, VCM market, competitor funding
+  4. DevForge (CI/CD platform) — watch for GitHub Actions pricing, Harness/CircleCI moves
+  5. DataStream (ML data infrastructure) — watch for Databricks/Confluent/Snowflake announcements
+
+  For each material finding, append a new entry to the company's news.md file under portfolio/companies/{company-name}/news.md.
+  Use format: ## [Date] — [Title] followed by 2-3 sentences of context.
+
+  At the end, update the "Intelligence Feed" section in vc-os/index.md with a 1-sentence summary of the most important portfolio signal of the day.
+cabinetPath: vc-os
+createdAt: '2026-04-13T00:00:00.000Z'
+updatedAt: '2026-04-13T00:00:00.000Z'

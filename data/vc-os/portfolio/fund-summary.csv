@@ -1,0 +1,9 @@
+Company,Fund,Stage at Entry,Entry Date,Investment,Current ARR,ARR at Entry,Revenue Multiple,Runway Months,Last Valuation,TVPI Est,Lead GP,Tags
+MintLayer,Fund II,Series B,2024-06-01,25000000,8500000,3200000,2.66,30,120000000,1.8,Sam Park,fintech;ai;b2b
+NeuralFlow,Fund II,Series A,2024-09-01,18000000,2100000,600000,3.5,18,45000000,1.4,Jordan Levi,ai;ml;enterprise
+GreenPulse,Fund II,Series A,2024-11-01,15000000,1200000,350000,3.43,20,38000000,1.3,Rafael Osei,climate;hardware;carbon
+DevForge,Fund II,Seed,2025-02-01,5000000,800000,120000,6.67,16,22000000,2.1,Sam Park,devtools;ci-cd;developer
+DataStream,Fund II,Seed,2025-04-01,4000000,450000,60000,7.5,22,18000000,1.6,Jordan Levi,data;infra;ml;streaming
+Helios (Fund I),Fund I,Series B,2022-01-01,12000000,14000000,5000000,2.8,48,200000000,3.2,Maya Chen,climate;energy;hardware
+Apex Protocol (Fund I),Fund I,Series A,2021-09-01,8000000,22000000,800000,27.5,36,180000000,4.1,Jordan Levi,web3;infra;protocol
+Lattice Labs (Fund I),Fund I,Seed,2021-06-01,3000000,8000000,200000,40,24,90000000,5.8,Sam Park,ai;ml;research

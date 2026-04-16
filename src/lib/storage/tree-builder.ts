@@ -2,6 +2,8 @@ import fs from "fs/promises";
 import path from "path";
 import matter from "gray-matter";
 import yaml from "js-yaml";
+import { CABINET_LINK_META_CANDIDATES, CABINET_MANIFEST_FILE } from "@/lib/cabinets/files";
+import { ROOT_CABINET_PATH } from "@/lib/cabinets/paths";
 import type { TreeNode } from "@/types";
 import { DATA_DIR, virtualPathFromFs, isHiddenEntry } from "./path-utils";
 import { listDirectory, readFileContent, fileExists } from "./fs-operations";
@@ -35,12 +37,30 @@ const AUDIO_EXTENSIONS = new Set([
 
 const MERMAID_EXTENSIONS = new Set([".mermaid", ".mmd"]);
 
+// Files that should appear in the sidebar as "unknown" with an Open in Finder fallback.
+// Only common document/archive types that a user would intentionally put in a KB.
+// Everything not in a known set is silently skipped.
+const UNKNOWN_EXTENSIONS = new Set([
+  // Office documents
+  ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx",
+  ".pages", ".numbers", ".key", ".odt", ".ods", ".odp",
+  // Archives
+  ".zip", ".tar", ".tgz", ".gz", ".rar", ".7z",
+  // Installers / packages
+  ".dmg", ".pkg", ".apk", ".ipa", ".msi", ".deb", ".rpm",
+  // Design
+  ".fig", ".sketch", ".psd", ".ai", ".xd",
+  // Other documents
+  ".epub", ".mobi", ".rtf",
+]);
+
 function classifyFile(ext: string): TreeNode["type"] | null {
   if (CODE_EXTENSIONS.has(ext)) return "code";
   if (IMAGE_EXTENSIONS.has(ext)) return "image";
   if (VIDEO_EXTENSIONS.has(ext)) return "video";
   if (AUDIO_EXTENSIONS.has(ext)) return "audio";
   if (MERMAID_EXTENSIONS.has(ext)) return "mermaid";
+  if (UNKNOWN_EXTENSIONS.has(ext)) return "unknown";
   return null;
 }
 
@@ -59,8 +79,26 @@ async function readFrontmatter(
 async function readCabinetMeta(
   dirPath: string
 ): Promise<Record<string, unknown>> {
+  for (const filename of CABINET_LINK_META_CANDIDATES) {
+    try {
+      const raw = await readFileContent(path.join(dirPath, filename));
+      const parsed = yaml.load(raw);
+      return typeof parsed === "object" && parsed !== null
+        ? (parsed as Record<string, unknown>)
+        : {};
+    } catch {
+      // Try the next metadata filename.
+    }
+  }
+
+  return {};
+}
+
+async function readCabinetManifest(
+  dirPath: string
+): Promise<Record<string, unknown>> {
   try {
-    const raw = await readFileContent(path.join(dirPath, ".cabinet.yaml"));
+    const raw = await readFileContent(path.join(dirPath, CABINET_MANIFEST_FILE));
     const parsed = yaml.load(raw);
     return typeof parsed === "object" && parsed !== null
       ? (parsed as Record<string, unknown>)
@@ -72,7 +110,8 @@ async function readCabinetMeta(
 
 async function buildTreeRecursive(
   dirPath: string,
-  ancestorRealPaths = new Set<string>()
+  ancestorRealPaths = new Set<string>(),
+  showHidden = false
 ): Promise<TreeNode[]> {
   let realDirPath = dirPath;
   try {
@@ -94,12 +133,12 @@ async function buildTreeRecursive(
   // Collect directory names so we can skip standalone .md files that collide.
   const dirNames = new Set(
     entries
-      .filter((e) => e.isDirectory && !isHiddenEntry(e.name))
+      .filter((e) => e.isDirectory && (!isHiddenEntry(e.name) || showHidden))
       .map((e) => e.name)
   );
 
   for (const entry of entries) {
-    if (isHiddenEntry(entry.name)) continue;
+    if (!showHidden && isHiddenEntry(entry.name)) continue;
     if (entry.name === "CLAUDE.md") continue;
 
     const fullPath = path.join(dirPath, entry.name);
@@ -110,6 +149,7 @@ async function buildTreeRecursive(
       const indexHtml = path.join(fullPath, "index.html");
       const hasIndexMd = await fileExists(indexMd);
       const hasIndexHtml = await fileExists(indexHtml);
+      const hasCabinet = await fileExists(path.join(fullPath, CABINET_MANIFEST_FILE));
 
       const repoYaml = path.join(fullPath, ".repo.yaml");
       const hasRepo = await fileExists(repoYaml);
@@ -132,19 +172,19 @@ async function buildTreeRecursive(
         continue;
       }
 
-      // Resolve metadata: prefer index.md frontmatter, fall back to .cabinet.yaml
+      // Resolve metadata: prefer index.md frontmatter, fall back to linked-folder metadata.
       let fm: Record<string, unknown> = {};
       if (hasIndexMd) {
         fm = await readFrontmatter(indexMd);
       } else if (isLinked) {
         fm = await readCabinetMeta(fullPath);
       }
-      const children = await buildTreeRecursive(fullPath, nextAncestorRealPaths);
+      const children = await buildTreeRecursive(fullPath, nextAncestorRealPaths, showHidden);
 
       nodes.push({
         name: entry.name,
         path: vPath,
-        type: "directory",
+        type: hasCabinet ? "cabinet" : "directory",
         hasRepo: hasRepo || undefined,
         isLinked,
         frontmatter: {
@@ -187,16 +227,6 @@ async function buildTreeRecursive(
         continue;
       }
 
-      // Unrecognized file — show with generic fallback
-      if (!entry.name.endsWith(".md")) {
-        nodes.push({
-          name: entry.name,
-          path: vPath,
-          type: "unknown",
-          frontmatter: { title: entry.name },
-        });
-        continue;
-      }
     }
 
     if (entry.name.endsWith(".md") && entry.name !== "index.md") {
@@ -231,6 +261,35 @@ async function buildTreeRecursive(
   return nodes;
 }
 
-export async function buildTree(): Promise<TreeNode[]> {
-  return buildTreeRecursive(DATA_DIR);
+export async function buildTree(showHidden = false): Promise<TreeNode[]> {
+  const children = await buildTreeRecursive(DATA_DIR, new Set<string>(), showHidden);
+  const rootManifest = await readCabinetManifest(DATA_DIR);
+
+  if (Object.keys(rootManifest).length === 0) {
+    return children;
+  }
+
+  const rootIndexPath = path.join(DATA_DIR, "index.md");
+  const rootFrontmatter = (await fileExists(rootIndexPath))
+    ? await readFrontmatter(rootIndexPath)
+    : {};
+
+  return [
+    {
+      name:
+        (typeof rootManifest.name === "string" && rootManifest.name.trim()) ||
+        "Cabinet",
+      path: ROOT_CABINET_PATH,
+      type: "cabinet",
+      frontmatter: {
+        title:
+          (rootFrontmatter.title as string | undefined) ||
+          (rootManifest.name as string | undefined) ||
+          "Cabinet",
+        icon: rootFrontmatter.icon as string | undefined,
+        order: rootFrontmatter.order as number | undefined,
+      },
+      children,
+    },
+  ];
 }

@@ -1,0 +1,20 @@
+id: monthly-runway-review
+name: Monthly Runway Review
+enabled: true
+schedule: 0 10 1 * *
+provider: claude-code
+ownerAgent: cfo
+agentSlug: cfo
+timeout: 600
+prompt: |-
+  Review the KPI page and current assumptions for Text Your Mom.
+  Write a monthly runway review that covers:
+  - subscriber growth
+  - trial to paid conversion
+  - retention pressure
+  - CAC and payback assumptions
+  - whether the company should spend more, hold, or cut
+  Save the review under /company/kpis or a finance subpage.
+cabinetPath: example-text-your-mom
+createdAt: '2026-04-11T00:00:00.000Z'
+updatedAt: '2026-04-11T00:00:00.000Z'

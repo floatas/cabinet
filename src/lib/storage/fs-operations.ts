@@ -1,5 +1,8 @@
 import fs from "fs/promises";
 import path from "path";
+import {
+  CABINET_LINK_META_CANDIDATES,
+} from "@/lib/cabinets/files";
 import { DATA_DIR } from "./path-utils";
 
 export async function readFileContent(absPath: string): Promise<string> {
@@ -44,8 +47,9 @@ export async function unlinkSymlink(absPath: string): Promise<void> {
   try {
     const target = await fs.readlink(absPath);
     const resolvedTarget = path.resolve(path.dirname(absPath), target);
-    const cabinetYaml = path.join(resolvedTarget, ".cabinet.yaml");
-    await fs.unlink(cabinetYaml).catch(() => {});
+    for (const filename of CABINET_LINK_META_CANDIDATES) {
+      await fs.unlink(path.join(resolvedTarget, filename)).catch(() => {});
+    }
   } catch {
     // target may be broken — still remove the symlink
   }

@@ -1,0 +1,96 @@
+Starting my first heartbeat as DevOps Engineer. Let me orient myself by exploring the app development cabinet and understanding the current state.running .zshenv 🌸
+total 16
+drwxr-xr-x@ 14 mybiblepath  staff  448 Apr 13 09:02 .
+drwxr-xr-x@ 11 mybiblepath  staff  352 Apr 13 09:03 ..
+drwxr-xr-x@  9 mybiblepath  staff  288 Apr 12 00:43 .agents
+-rw-r--r--@  1 mybiblepath  staff  396 Apr 11 17:46 .cabinet
+drwxr-xr-x@  3 mybiblepath  staff   96 Apr 11 17:46 .cabinet-state
+drwxr-xr-x@  5 mybiblepath  staff  160 Apr 11 17:46 .jobs
+drwxr-xr-x@  4 mybiblepath  staff  128 Apr 13 10:33 backlog
+drwxr-xr-x@  3 mybiblepath  staff   96 Apr 13 09:02 cto-updates
+-rw-r--r--@  1 mybiblepath  staff  888 Apr 13 09:02 index.md
+drwxr-xr-x@  6 mybiblepath  staff  192 Apr 12 00:17 prds
+drwxr-xr-x@  3 mybiblepath  staff   96 Apr 11 17:46 qa
+drwxr-xr-x@  3 mybiblepath  staff   96 Apr 13 10:35 release-checklist
+drwxr-xr-x@  3 mybiblepath  staff   96 Apr 13 09:02 roadmap
+drwxr-xr-x@  4 mybiblepath  staff  128 Apr 11 17:46 sprint-board
+running .zshenv 🌸
+total 0
+drwxr-xr-x@  9 mybiblepath  staff  288 Apr 12 00:43 .
+drwxr-xr-x@ 14 mybiblepath  staff  448 Apr 13 09:02 ..
+drwxr-xr-x@  4 mybiblepath  staff  128 Apr 13 13:50 .conversations
+drwxr-xr-x@  6 mybiblepath  staff  192 Apr 12 01:01 .memory
+drwxr-xr-x@  6 mybiblepath  staff  192 Apr 12 01:01 .messages
+drwxr-xr-x@  3 mybiblepath  staff   96 Apr 11 17:46 cto
+drwxr-xr-x@  3 mybiblepath  staff   96 Apr 11 17:46 devops
+drwxr-xr-x@  3 mybiblepath  staff   96 Apr 11 17:46 product-manager
+drwxr-xr-x@  3 mybiblepath  staff   96 Apr 11 17:46 qa
+running .zshenv 🌸
+total 24
+drwxr-xr-x@  5 mybiblepath  staff  160 Apr 11 17:46 .
+drwxr-xr-x@ 14 mybiblepath  staff  448 Apr 13 09:02 ..
+-rw-r--r--@  1 mybiblepath  staff  546 Apr 13 10:31 daily-bug-triage.yaml
+-rw-r--r--@  1 mybiblepath  staff  605 Apr 13 10:31 release-readiness-review.yaml
+-rw-r--r--@  1 mybiblepath  staff  608 Apr 13 10:31 weekly-sprint-plan.yaml
+Good. I have full picture now. This is effectively my first real working heartbeat. Let me assess and take action.
+
+**Key observations from my review:**
+
+1. **Zero releases shipped** — the pipeline is untested. OB-2 is the planned dry run this week.
+2. **Release checklist is thin** — no rollback procedure, no monitoring thresholds defined, no CI/CD steps.
+3. **RT-4 (2-hour late reminder)** is critical and CTO took ownership — but no investigation output yet.
+4. **No monitoring documentation** — the release checklist says "confirm monitoring thresholds" but doesn't define what those thresholds are.
+5. **No rollback plan exists** — checklist says "write one" but nobody has.
+
+I'll take three actions this heartbeat:
+1. Write a concrete rollback and monitoring runbook for the OB-2 dry run
+2. Update the release checklist with operational specifics
+3. Flag risks to CTO and QA
+
+Let me start.Now update the release checklist to reference the runbook and add operational specifics.Now let me check if there's a message system to write to.running .zshenv 🌸
+total 0
+drwxr-xr-x@ 6 mybiblepath  staff  192 Apr 12 01:01 .
+drwxr-xr-x@ 9 mybiblepath  staff  288 Apr 12 00:43 ..
+drwxr-xr-x@ 2 mybiblepath  staff   64 Apr 12 00:24 cto
+drwxr-xr-x@ 2 mybiblepath  staff   64 Apr 12 01:00 devops
+drwxr-xr-x@ 2 mybiblepath  staff   64 Apr 12 01:01 product-manager
+drwxr-xr-x@ 2 mybiblepath  staff   64 Apr 12 01:00 qa
+Now let me write the memory context for future heartbeats.running .zshenv 🌸
+total 0
+drwxr-xr-x@ 2 mybiblepath  staff   64 Apr 12 01:00 .
+drwxr-xr-x@ 6 mybiblepath  staff  192 Apr 12 01:01 ..
+All tasks complete. Here's the heartbeat summary:
+
+---
+
+## Heartbeat Summary
+
+**What I did:**
+1. **Created OB-2 Rollback & Monitoring Runbook** (`release-checklist/ob2-rollback-runbook.md`) — concrete pre-release checks table, staged rollout plan (10% → 50% → 100% with 24h soaks), monitoring thresholds during rollout, step-by-step rollback procedure with time estimates.
+
+2. **Updated Release Checklist** (`release-checklist/index.md`) — added specific monitoring thresholds (crash-free ≥99%, onboarding drop not >6pp), linked to the runbook, documented open gaps (no CI/CD exercised, no baselines recorded, OB-6 analytics not yet instrumented).
+
+3. **Created Monitoring Requirements** (`release-checklist/monitoring-requirements.md`) — three-tier monitoring framework: trust metrics (alert immediately), product health (daily review during rollout), infrastructure health (background). Documented four current gaps including zero delivery telemetry.
+
+4. **Sent messages to CTO and QA** — asked CTO what tooling is live and to include delivery observability in RT-4 investigation. Asked QA to coordinate on OB-2 pre-release testing using the runbook checklist.
+
+**Biggest risk:** We are completely blind on reminder delivery. No server-side logs, no device telemetry, no way to detect RT-4-class bugs except user complaints. This doesn't block OB-2 (copy change) but blocks any meaningful monitoring of P2.
+
+---
+
+```memory
+CONTEXT_UPDATE: First working heartbeat. Created OB-2 rollback runbook with staged rollout plan, monitoring thresholds, and rollback procedure. Updated release checklist with operational specifics and documented open gaps. Created monitoring requirements page with three-tier framework. Sent messages to CTO requesting tooling inventory and delivery telemetry assessment, and to QA for OB-2 testing coordination. Biggest finding: zero delivery observability exists — reminders are device-local with no server-side logs.
+DECISION: Treating OB-2 as full pipeline rehearsal despite being copy-only. The process rehearsal is more valuable than the patch. Reason: no release has ever shipped from this backlog, so the first one will surface unknown gaps.
+LEARNING: Reminder delivery is entirely device-local. No server-side delivery logs, no retry mechanism, no way to detect late delivery except user complaints. This is a systemic observability gap, not just an RT-4 bug.
+MESSAGE_TO [cto]: Need answers on two items before OB-2 can ship with confidence: (1) what analytics/crash tooling is live today, and (2) do we have any reminder delivery telemetry. See full message in your inbox. RT-4 investigation should include delivery observability assessment.
+MESSAGE_TO [qa]: OB-2 pre-release testing items are defined in the rollback runbook (release-checklist/ob2-rollback-runbook.md). Three QA-owned checks: iOS walkthrough, Android walkthrough, no regressions. Please coordinate when OB-2 is ready for QA.
+SLACK [engineering]: DevOps first heartbeat: wrote OB-2 rollback runbook, monitoring requirements, and updated release checklist. Sent coordination messages to CTO and QA. Key gap: we have zero reminder delivery observability. OB-2 can still ship as a pipeline rehearsal, but we need tooling answers from CTO before we can meaningfully monitor.
+```
+
+```cabinet
+SUMMARY: Created OB-2 rollback runbook, monitoring requirements, and updated release checklist with operational specifics. Sent messages to CTO and QA.
+CONTEXT: First heartbeat. No releases shipped yet. Pipeline untested. Zero delivery observability. CTO investigating RT-4. OB-2 is the planned dry run for week of April 14.
+ARTIFACT: release-checklist/ob2-rollback-runbook.md
+ARTIFACT: release-checklist/monitoring-requirements.md
+ARTIFACT: release-checklist/index.md
+```

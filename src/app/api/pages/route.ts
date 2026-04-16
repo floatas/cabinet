@@ -1,6 +1,6 @@
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";
-import { readPage, writePage } from "@/lib/storage/page-io";
+import { readPage, writePage, createPage } from "@/lib/storage/page-io";
 import { fileExists, writeFileContent } from "@/lib/storage/fs-operations";
 import { DATA_DIR } from "@/lib/storage/path-utils";
 import { autoCommit } from "@/lib/git/git-service";
@@ -25,6 +25,19 @@ export async function GET() {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     const status = message.includes("not found") ? 404 : 500;
+    return NextResponse.json({ error: message }, { status });
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    await createPage("", body.title);
+    autoCommit("", "Add");
+    return NextResponse.json({ ok: true }, { status: 201 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const status = message.includes("already exists") ? 409 : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

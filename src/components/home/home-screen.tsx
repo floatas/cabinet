@@ -2,8 +2,22 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useAppStore } from "@/stores/app-store";
-import { Send, Users } from "lucide-react";
+import { useTreeStore } from "@/stores/tree-store";
+import { Users, Download, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { flattenTree } from "@/lib/tree-utils";
+import { ComposerInput } from "@/components/composer/composer-input";
+import { useComposer, type MentionableItem } from "@/hooks/use-composer";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import type { AgentListItem } from "@/types/agents";
+import type { RegistryTemplate } from "@/lib/registry/registry-manifest";
 
 const QUICK_ACTIONS = [
   "Brainstorm ideas",
@@ -11,66 +25,6 @@ const QUICK_ACTIONS = [
   "Plan roadmap",
   "Create research plan",
   "Create requirements doc",
-];
-
-interface Cabinet {
-  name: string;
-  description: string;
-  agents: number;
-  domain: string;
-}
-
-const CABINETS: Cabinet[] = [
-  { name: "Content Marketing Agency", description: "SEO, blogs & social media on autopilot", agents: 8, domain: "Marketing" },
-  { name: "E-commerce Operator", description: "Listings, support, inventory & ads management", agents: 10, domain: "E-commerce" },
-  { name: "YouTube Factory", description: "Scripts, edits, thumbnails, scheduling & publishing", agents: 6, domain: "Media" },
-  { name: "Dev Agency", description: "PM, engineers, QA & DevOps pipeline", agents: 9, domain: "Software" },
-  { name: "Real Estate Leads", description: "Prospecting, outreach, follow-up & closing deals", agents: 7, domain: "Sales" },
-  { name: "Bookkeeping Firm", description: "Invoice reconciliation, tax prep & reporting", agents: 6, domain: "Finance" },
-  { name: "Grant Writing Agency", description: "Research grants, draft applications & track deadlines", agents: 5, domain: "Finance" },
-  { name: "Recruiting Agency", description: "Sourcing, screening, outreach & scheduling", agents: 8, domain: "Professional Services" },
-  { name: "Legal Doc Shop", description: "Contract drafting, NDA, compliance & client intake", agents: 6, domain: "Professional Services" },
-  { name: "Translation Bureau", description: "Intake, translate, QA, localization & delivery", agents: 5, domain: "Professional Services" },
-  { name: "Podcast Production House", description: "Research, scripting, editing & distribution", agents: 7, domain: "Media" },
-  { name: "Newsletter Empire", description: "Niche research, writing, curation & growth", agents: 5, domain: "Media" },
-  { name: "Stock Photo & Video Studio", description: "AI generation, keywording, listing & licensing", agents: 4, domain: "Media" },
-  { name: "Market Research Firm", description: "Data collection, analysis & report generation", agents: 6, domain: "Data & Research" },
-  { name: "Competitive Intelligence Agency", description: "Monitoring, alerts, trend reports & executive briefs", agents: 5, domain: "Data & Research" },
-  { name: "Lead Enrichment Service", description: "Scrape, verify, enrich, score & deliver lists", agents: 5, domain: "Data & Research" },
-  { name: "Online Course Factory", description: "Curriculum, content creation & platform setup", agents: 8, domain: "Education" },
-  { name: "Resume & Career Coaching", description: "Resume writing, cover letters & interview prep", agents: 6, domain: "Education" },
-  { name: "Customer Support BPO", description: "Ticket triage, response, escalation & reporting", agents: 7, domain: "Operations" },
-  { name: "Dropshipping Brand", description: "Product research, supplier, storefront & ads", agents: 8, domain: "E-commerce" },
-  { name: "SaaS Onboarding Agency", description: "Documentation, tutorials, email sequences & analytics", agents: 6, domain: "Operations" },
-  { name: "Review Management Agency", description: "Monitor reviews, draft responses & report sentiment", agents: 4, domain: "Marketing" },
-  { name: "Event Promotion Agency", description: "Find events, create assets, distribute & sell tickets", agents: 7, domain: "Marketing" },
-  { name: "UGC Ad Factory", description: "Script hooks, brief creators, edit & A/B test", agents: 7, domain: "Paid Social" },
-  { name: "Meta Ads War Room", description: "Creative variants, audience, launch & optimize ROAS", agents: 6, domain: "Paid Social" },
-  { name: "TikTok Shop Operator", description: "Product listings, affiliate outreach & live stream", agents: 8, domain: "E-commerce" },
-  { name: "Influencer Matchmaker", description: "Find creators, negotiate, brief & measure ROI", agents: 6, domain: "Paid Social" },
-  { name: "Cold Email Agency", description: "ICP research, list building, copy & sending", agents: 7, domain: "Sales" },
-  { name: "LinkedIn Lead Gen Shop", description: "Profile optimization, connections & DM sequences", agents: 5, domain: "Sales" },
-  { name: "Appointment Setting Firm", description: "Multi-channel outreach, qualification & booking", agents: 6, domain: "Sales" },
-  { name: "Amazon FBA Launcher", description: "Product research, listing, PPC & restock alerts", agents: 8, domain: "E-commerce" },
-  { name: "Etsy Shop Manager", description: "SEO titles, photos, customer messages & refreshes", agents: 5, domain: "E-commerce" },
-  { name: "Amazon PPC Agency", description: "Keyword harvesting, bid management & reporting", agents: 4, domain: "E-commerce" },
-  { name: "Ghostwriting Studio", description: "LinkedIn posts, Twitter threads & newsletters", agents: 5, domain: "Content Ops" },
-  { name: "Clip Farm", description: "Chop long-form into reels, shorts & captions", agents: 5, domain: "Media" },
-  { name: "Blog-to-Revenue Pipeline", description: "Keyword research, write, optimize & monetize", agents: 7, domain: "Marketing" },
-  { name: "Carousel Factory", description: "Design Instagram, LinkedIn & TikTok carousels", agents: 4, domain: "Marketing" },
-  { name: "Webflow & Framer Build Shop", description: "Design, build, copy, launch & maintain sites", agents: 6, domain: "Software" },
-  { name: "Shopify Store Setup Agency", description: "Theme, products, payments & launch checklist", agents: 5, domain: "E-commerce" },
-  { name: "Notion & Airtable Systems Builder", description: "Intake requirements, build, automate & document", agents: 5, domain: "Software" },
-  { name: "Podcast Booking Agency", description: "Research shows, pitch, schedule & prep talking points", agents: 6, domain: "Media" },
-  { name: "PR Pitching Machine", description: "Media list, write pitches, send & track", agents: 5, domain: "Marketing" },
-  { name: "Proposal & RFP Factory", description: "Parse RFPs, draft responses, format & submit", agents: 6, domain: "Professional Services" },
-  { name: "Warranty Returns Processor", description: "Intake claims, verify, process & report trends", agents: 5, domain: "Operations" },
-  { name: "Price Monitoring Service", description: "Track competitor prices, alert changes & report", agents: 4, domain: "Data & Research" },
-  { name: "Job Board Aggregator", description: "Scrape postings, deduplicate & categorize", agents: 5, domain: "Data & Research" },
-  { name: "Patent & Trademark Watch", description: "Monitor filings, flag conflicts & summarize", agents: 4, domain: "Data & Research" },
-  { name: "App Store Optimization Shop", description: "Keyword research, screenshots & A/B test", agents: 5, domain: "Marketing" },
-  { name: "Churned User Win-Back Agency", description: "Segment churned users, write sequences & track", agents: 4, domain: "Marketing" },
-  { name: "Onboarding Email Studio", description: "Map user journey, write drip, test & optimize", agents: 4, domain: "Marketing" },
 ];
 
 const DOMAIN_COLORS: Record<string, string> = {
@@ -95,41 +49,63 @@ function getGreeting(): string {
   return "Good evening";
 }
 
-function CabinetCard({ cabinet }: { cabinet: Cabinet }) {
-  const colorClass = DOMAIN_COLORS[cabinet.domain] || "bg-muted text-muted-foreground";
+function CabinetCard({
+  template,
+  onClick,
+}: {
+  template: RegistryTemplate;
+  onClick: () => void;
+}) {
+  const colorClass =
+    DOMAIN_COLORS[template.domain] || "bg-muted text-muted-foreground";
 
   return (
-    <div className="flex-shrink-0 w-64 h-36 rounded-xl border border-border bg-card p-4 flex flex-col cursor-default select-none">
+    <button
+      onClick={onClick}
+      className="group flex-shrink-0 w-64 h-36 rounded-xl border border-border bg-card p-4 flex flex-col text-left cursor-pointer transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md"
+    >
       <h3 className="text-sm font-medium text-foreground leading-tight">
-        {cabinet.name}
+        {template.name}
       </h3>
-      <p className="text-xs text-muted-foreground leading-relaxed mt-2">
-        {cabinet.description}
+      <p className="text-xs text-muted-foreground leading-relaxed mt-2 line-clamp-2">
+        {template.description}
       </p>
       <div className="flex items-center justify-between mt-auto pt-3">
-        <span className={cn("text-[10px] font-medium px-2 py-0.5 rounded-full", colorClass)}>
-          {cabinet.domain}
+        <span
+          className={cn(
+            "text-[10px] font-medium px-2 py-0.5 rounded-full",
+            colorClass
+          )}
+        >
+          {template.domain}
         </span>
         <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
           <Users className="h-3 w-3" />
-          {cabinet.agents} agents
+          {template.agentCount} agents
+          <Download className="h-3 w-3 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
         </span>
       </div>
-    </div>
+    </button>
   );
 }
 
-function InfiniteCarousel() {
+function RegistryCarousel({
+  templates,
+  onSelect,
+}: {
+  templates: RegistryTemplate[];
+  onSelect: (template: RegistryTemplate) => void;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el) return;
+    if (!el || templates.length === 0) return;
 
     let animationId: number;
     let position = 0;
-    const speed = 1.2; // px per frame
+    const speed = 1.2;
 
     const animate = () => {
       if (!isPaused) {
@@ -145,9 +121,9 @@ function InfiniteCarousel() {
 
     animationId = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(animationId);
-  }, [isPaused]);
+  }, [isPaused, templates]);
 
-  const doubled = [...CABINETS, ...CABINETS];
+  const doubled = [...templates, ...templates];
 
   return (
     <div
@@ -155,29 +131,149 @@ function InfiniteCarousel() {
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
     >
-      <div
-        ref={scrollRef}
-        className="flex gap-3 will-change-transform"
-      >
-        {doubled.map((cabinet, i) => (
-          <CabinetCard key={`${cabinet.name}-${i}`} cabinet={cabinet} />
+      <div ref={scrollRef} className="flex gap-3 will-change-transform">
+        {doubled.map((template, i) => (
+          <CabinetCard
+            key={`${template.slug}-${i}`}
+            template={template}
+            onClick={() => onSelect(template)}
+          />
         ))}
-      </div>
-      <div className="absolute inset-0 backdrop-blur-[1.5px] hover:backdrop-blur-[0.5px] transition-all duration-500 z-10" />
-      <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
-        <span className="text-sm font-semibold uppercase tracking-wider text-muted-foreground bg-background/80 px-4 py-1.5 rounded-full border border-border">
-          Coming soon
-        </span>
       </div>
     </div>
   );
 }
 
+function ImportDialog({
+  template,
+  open,
+  onOpenChange,
+  onImportStart,
+  onImportEnd,
+}: {
+  template: RegistryTemplate | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onImportStart: () => void;
+  onImportEnd: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const loadTree = useTreeStore((s) => s.loadTree);
+  const selectPage = useTreeStore((s) => s.selectPage);
+  const setSection = useAppStore((s) => s.setSection);
+
+  useEffect(() => {
+    if (template) setName(template.name);
+  }, [template]);
+
+  const handleImport = async () => {
+    if (!template) return;
+    setImporting(true);
+    setError(null);
+    onImportStart();
+    onOpenChange(false);
+
+    try {
+      const res = await fetch("/api/registry/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug: template.slug,
+          name: name.trim() !== template.name ? name.trim() : undefined,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || "Import failed");
+        setImporting(false);
+        onImportEnd();
+        onOpenChange(true);
+        return;
+      }
+
+      await res.json();
+      onImportEnd();
+      window.location.reload();
+    } catch {
+      setError("Import failed. Check your internet connection.");
+      setImporting(false);
+      onImportEnd();
+      onOpenChange(true);
+    }
+  };
+
+  if (!template) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!importing) onOpenChange(v); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Import {template.name}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            {template.description}
+          </p>
+          <div className="flex gap-4 text-xs text-muted-foreground">
+            <span>{template.agentCount} agents</span>
+            <span>{template.jobCount} jobs</span>
+            {template.childCount > 0 && (
+              <span>{template.childCount} sub-cabinets</span>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">
+              Cabinet name
+            </label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Cabinet name..."
+            />
+            <p className="text-[11px] text-muted-foreground/70">
+              Cabinet names can&apos;t be renamed later (for now). Choose wisely.
+            </p>
+          </div>
+          {error && (
+            <p className="text-xs text-destructive">{error}</p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={importing}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleImport}
+              disabled={importing || !name.trim()}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Import
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function HomeScreen() {
   const setSection = useAppStore((s) => s.setSection);
-  const [prompt, setPrompt] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const treeNodes = useTreeStore((s) => s.nodes);
   const [userName, setUserName] = useState<string | null>(null);
+  const [agents, setAgents] = useState<AgentListItem[]>([]);
+  const [registryTemplates, setRegistryTemplates] = useState<
+    RegistryTemplate[]
+  >([]);
+  const [importTemplate, setImportTemplate] =
+    useState<RegistryTemplate | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     fetch("/api/agents/config")
@@ -188,43 +284,76 @@ export function HomeScreen() {
         }
       })
       .catch(() => {});
+
+    fetch("/api/cabinets/overview?path=.&visibility=all")
+      .then((r) => r.json())
+      .then((data) => {
+        const overview = (data.agents || []).map(
+          (a: Record<string, unknown>) => ({
+            name: a.name as string,
+            slug: a.slug as string,
+            emoji: (a.emoji as string) || "",
+            role: (a.role as string) || "",
+            active: a.active as boolean,
+          })
+        ) as AgentListItem[];
+        setAgents(overview);
+      })
+      .catch(() => {});
+
+    fetch("/api/registry")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.templates) setRegistryTemplates(data.templates);
+      })
+      .catch(() => {});
   }, []);
 
-  const submitPrompt = async (text: string) => {
-    if (!text.trim() || submitting) return;
+  const mentionItems: MentionableItem[] = [
+    ...agents
+      .filter((a) => a.slug !== "general" && a.slug !== "editor")
+      .map((a) => ({
+        type: "agent" as const,
+        id: a.slug,
+        label: a.name,
+        sublabel: a.role || "",
+        icon: a.emoji,
+      })),
+    ...flattenTree(treeNodes).map((p) => ({
+      type: "page" as const,
+      id: p.path,
+      label: p.title,
+      sublabel: p.path,
+    })),
+  ];
 
-    setSubmitting(true);
-    try {
+  const composer = useComposer({
+    items: mentionItems,
+    onSubmit: async ({ message, mentionedPaths, mentionedAgents }) => {
+      const targetAgent =
+        mentionedAgents.length > 0 ? mentionedAgents[0] : "general";
+
       const res = await fetch("/api/agents/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          agentSlug: "general",
-          userMessage: text.trim(),
-          mentionedPaths: [],
+          agentSlug: targetAgent,
+          userMessage: message,
+          mentionedPaths,
         }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        setPrompt("");
-        setSection({
-          type: "agent",
-          slug: "general",
-          conversationId: data.conversation?.id,
-        });
-      }
-    } catch {
-      // ignore
-    } finally {
-      setSubmitting(false);
-    }
-  };
+      if (!res.ok) throw new Error("Failed to start conversation");
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    submitPrompt(prompt);
-  };
+      const data = await res.json();
+      setSection({
+        type: "agent",
+        mode: "ops",
+        slug: targetAgent,
+        conversationId: data.conversation?.id,
+      });
+    },
+  });
 
   const greeting = getGreeting();
   const displayName = userName || "there";
@@ -237,65 +366,29 @@ export function HomeScreen() {
           What are we working on today?
         </h1>
 
-        <form onSubmit={handleSubmit} className="relative w-full">
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-                e.preventDefault();
-                submitPrompt(prompt);
-              } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                setPrompt((prev) => prev + "\n");
-              }
-            }}
-            placeholder="I want to create..."
-            disabled={submitting}
-            rows={1}
-            className={cn(
-              "w-full rounded-xl border border-border bg-card px-4 py-3 pr-44 sm:pr-52",
-              "text-sm text-foreground placeholder:text-muted-foreground",
-              "focus:outline-none focus:ring-2 focus:ring-ring",
-              "shadow-sm resize-none"
-            )}
-            autoFocus
-          />
-          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-            <kbd className="hidden sm:inline-flex items-center gap-0.5 text-[10px] text-muted-foreground/60 font-medium">
-              <span className="rounded border border-border/50 px-1 py-0.5">⌘</span>
-              <span>+</span>
-              <span className="rounded border border-border/50 px-1 py-0.5">↵</span>
-              <span className="ml-0.5">new line</span>
-            </kbd>
-            <button
-              type="submit"
-              disabled={!prompt.trim() || submitting}
-              className={cn(
-                "h-8 w-8 rounded-lg flex items-center justify-center",
-                "transition-colors",
-                prompt.trim() && !submitting
-                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                  : "bg-muted text-muted-foreground"
-              )}
-            >
-              <Send className="h-4 w-4" />
-            </button>
-          </div>
-        </form>
+        <ComposerInput
+          composer={composer}
+          placeholder="I want to create..."
+          variant="card"
+          items={mentionItems}
+          autoFocus
+          className="w-full"
+          minHeight="44px"
+          maxHeight="160px"
+        />
 
         <div className="flex flex-wrap items-center justify-center gap-2">
           {QUICK_ACTIONS.map((action) => (
             <button
               key={action}
-              onClick={() => submitPrompt(action)}
-              disabled={submitting}
+              onClick={() => void composer.submit(action)}
+              disabled={composer.submitting}
               className={cn(
                 "rounded-full border border-border px-4 py-1.5",
                 "text-sm text-foreground/80",
                 "hover:bg-accent hover:text-accent-foreground",
                 "transition-colors",
-                submitting && "opacity-50 cursor-not-allowed"
+                composer.submitting && "opacity-50 cursor-not-allowed"
               )}
             >
               {action}
@@ -305,11 +398,51 @@ export function HomeScreen() {
       </div>
 
       <div className="w-screen pb-8 pt-4 space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground text-center">
-          Import a pre-made zero-human team
-        </h2>
-        <InfiniteCarousel />
+        <div className="flex items-center justify-center gap-3">
+          <h2 className="text-sm font-medium text-muted-foreground">
+            Import a pre-made zero-human team
+          </h2>
+          <button
+            onClick={() => setSection({ type: "registry" })}
+            className="text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+          >
+            Browse all &rarr;
+          </button>
+        </div>
+        <RegistryCarousel
+          templates={registryTemplates}
+          onSelect={(template) => {
+            setImportTemplate(template);
+            setImportOpen(true);
+          }}
+        />
       </div>
+
+      <ImportDialog
+        template={importTemplate}
+        open={importOpen}
+        onOpenChange={(open) => {
+          setImportOpen(open);
+          if (!open && !importing) setImportTemplate(null);
+        }}
+        onImportStart={() => setImporting(true)}
+        onImportEnd={() => setImporting(false)}
+      />
+
+      {importing && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="mt-4 text-sm font-medium text-foreground">
+            Importing {importTemplate?.name || "cabinet"}...
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Downloading agents, jobs, and content from the registry
+          </p>
+          <p className="mt-3 text-[11px] text-muted-foreground/60">
+            Please do not refresh the page while importing
+          </p>
+        </div>
+      )}
     </div>
   );
 }

@@ -84,7 +84,23 @@ export function WebTerminal({
     let ws: WebSocket | null = null;
     let resizeObserver: ResizeObserver | null = null;
     let themeObserver: MutationObserver | null = null;
+    let statusPollHandle: ReturnType<typeof setInterval> | null = null;
     let disposed = false;
+    let sessionFinished = false;
+
+    const finishSession = (closeSocket = false) => {
+      if (disposed || sessionFinished) return;
+      sessionFinished = true;
+      if (statusPollHandle) {
+        clearInterval(statusPollHandle);
+        statusPollHandle = null;
+      }
+      terminal?.write("\r\n\x1b[90m[Session ended]\x1b[0m\r\n");
+      if (closeSocket && ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+      onCloseRef.current?.();
+    };
 
     const init = async () => {
       const { Terminal } = await import("@xterm/xterm");
@@ -244,9 +260,24 @@ export function WebTerminal({
 
             ws.onclose = () => {
               if (disposed) return;
-              terminal?.write("\r\n\x1b[90m[Session ended]\x1b[0m\r\n");
-              onCloseRef.current?.();
+              finishSession(false);
             };
+
+            statusPollHandle = setInterval(() => {
+              if (disposed || sessionFinished) return;
+              void (async () => {
+                try {
+                  const response = await fetch(`/api/daemon/session/${id}/output`);
+                  if (!response.ok) return;
+                  const data = (await response.json()) as { status?: string };
+                  if (data.status && data.status !== "running") {
+                    finishSession(true);
+                  }
+                } catch {
+                  // Ignore transient polling failures; the socket remains the primary signal.
+                }
+              })();
+            }, 3000);
           } catch {
             setError("Connection failed. Is the daemon running?");
             terminal?.write(
@@ -267,6 +298,9 @@ export function WebTerminal({
 
     return () => {
       disposed = true;
+      if (statusPollHandle) {
+        clearInterval(statusPollHandle);
+      }
       resizeObserver?.disconnect();
       themeObserver?.disconnect();
       ws?.close();

@@ -1,0 +1,15 @@
+schemaVersion: 1
+id: vc-os-deal-flow
+name: Deal Flow
+kind: child
+version: 0.1.0
+description: Investment pipeline from sourcing to close. Tracks all active deals, passed deals, and pipeline health.
+entry: index.md
+
+parent:
+  shared_context:
+    - /index.md
+    - /team/index.md
+
+access:
+  mode: subtree-plus-parent-brief

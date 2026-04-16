@@ -1,0 +1,7 @@
+schemaVersion: 1
+id: apple-root
+name: Apple
+kind: root
+version: 0.1.0
+description: Fun
+entry: index.md

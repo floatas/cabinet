@@ -1,0 +1,28 @@
+id: portfolio-health-check
+name: Weekly Portfolio Health Check
+description: Reviews every Fund II company's metrics every Friday and produces a health table with status flags for the partners.
+ownerAgent: portfolio-manager
+agentSlug: portfolio-manager
+enabled: true
+schedule: "0 9 * * 5"
+provider: claude-code
+timeout: 600
+prompt: |-
+  Every Friday, run a portfolio health check across all Fund II companies.
+
+  For each company (NeuralFlow, MintLayer, GreenPulse, DevForge, DataStream):
+  1. Read their metrics.csv — calculate MoM growth, runway burn rate change, and whether they are tracking to plan
+  2. Flag any metric that moved >15% in either direction (good or bad)
+  3. Check their news.md for any material updates this week
+
+  Produce a weekly health summary and append it as a new section to portfolio/index.md under "Weekly Health Check — [Date]".
+
+  Format:
+  - Each company gets one line: Company | ARR | MoM Growth | Runway | Status Emoji (🟢🟡🔴)
+  - Below the table: 2-3 bullets on what needs attention
+  - A "Wins this week" bullet with any positive signal worth celebrating
+
+  Keep it tight — GPs read this on Friday afternoon before the weekend.
+cabinetPath: vc-os
+createdAt: "2026-04-13T00:00:00.000Z"
+updatedAt: "2026-04-13T00:00:00.000Z"

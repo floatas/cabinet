@@ -32,7 +32,15 @@ async function collectPages(
 
     if (entry.isDirectory) {
       const indexMd = path.join(fullPath, "index.md");
-      if (await fileExists(indexMd)) {
+      const indexHtml = path.join(fullPath, "index.html");
+      const hasIndexMd = await fileExists(indexMd);
+      const hasIndexHtml = await fileExists(indexHtml);
+
+      // Skip app/website directories — self-contained, internal files
+      // should not appear in KB search results
+      if (hasIndexHtml && !hasIndexMd) continue;
+
+      if (hasIndexMd) {
         const raw = await readFileContent(indexMd);
         const { data, content } = matter(raw);
         const title = (data.title as string) || entry.name;

@@ -1,0 +1,27 @@
+id: weekly-pipeline-review
+name: Weekly Deal Pipeline Review
+description: Reviews the active deal pipeline every Wednesday morning before the partner meeting — flags stale deals, cross-references intelligence signals, and prepares a pipeline status summary.
+ownerAgent: deal-scout
+agentSlug: deal-scout
+enabled: true
+schedule: "0 8 * * 3"
+provider: claude-code
+timeout: 600
+prompt: |-
+  Every Wednesday morning (partner meeting day), review the Warp Ventures deal flow pipeline.
+
+  1. Read deal-flow/active-deals.csv
+  2. For each deal: identify if it has been stagnant (no activity in 7+ days), is approaching a decision gate, or needs a follow-up
+  3. Cross-check against the intelligence/daily-brief.md — did any intelligence this week make a deal more or less attractive?
+  4. Check if any deal in "Sourcing" should be moved to "First Look" or "Passed" based on information gathered
+
+  Write a Wednesday Pipeline Review and append to deal-flow/index.md under "Weekly Pipeline Review — [Date]":
+  - Active deals count by stage
+  - Deals needing immediate action (bold)
+  - 1-2 sentences on overall pipeline health
+  - Any new deal leads worth adding based on intelligence signals
+
+  Update active-deals.csv if any stage changes are warranted, adding a note in the Notes column.
+cabinetPath: vc-os
+createdAt: "2026-04-13T00:00:00.000Z"
+updatedAt: "2026-04-13T00:00:00.000Z"

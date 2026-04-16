@@ -18,6 +18,22 @@ function normalizeOrigin(value: string | undefined): string | null {
   return trimmed.replace(/\/+$/, "");
 }
 
+type RuntimePortsState = {
+  app?: {
+    port?: number;
+    origin?: string;
+    pid?: number;
+    updatedAt?: string;
+  };
+  daemon?: {
+    port?: number;
+    origin?: string;
+    wsOrigin?: string;
+    pid?: number;
+    updatedAt?: string;
+  };
+};
+
 function defaultElectronDataDir(): string {
   if (process.platform === "darwin") {
     return path.join(os.homedir(), "Library", "Application Support", "Cabinet");
@@ -77,26 +93,63 @@ export function getManagedDataDir(): string {
   return path.join(PROJECT_ROOT, "data");
 }
 
+function getRuntimePortsPath(): string {
+  return path.join(getManagedDataDir(), ".cabinet-state", "runtime-ports.json");
+}
+
+function readRuntimePorts(): RuntimePortsState {
+  try {
+    const raw = fs.readFileSync(getRuntimePortsPath(), "utf-8");
+    const parsed = JSON.parse(raw) as RuntimePortsState;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 export function getAppPort(): number {
-  return parsePort(process.env.CABINET_APP_PORT || process.env.PORT, 3000);
+  const runtimePort = readRuntimePorts().app?.port;
+  return parsePort(
+    process.env.CABINET_APP_PORT || process.env.PORT,
+    typeof runtimePort === "number" && Number.isFinite(runtimePort)
+      ? runtimePort
+      : 4000
+  );
 }
 
 export function getDaemonPort(): number {
-  return parsePort(process.env.CABINET_DAEMON_PORT, 3001);
+  const runtimePort = readRuntimePorts().daemon?.port;
+  return parsePort(
+    process.env.CABINET_DAEMON_PORT,
+    typeof runtimePort === "number" && Number.isFinite(runtimePort)
+      ? runtimePort
+      : 4100
+  );
 }
 
 export function getAppOrigin(): string {
-  return normalizeOrigin(process.env.CABINET_APP_ORIGIN) || `http://127.0.0.1:${getAppPort()}`;
+  const runtimeOrigin = normalizeOrigin(readRuntimePorts().app?.origin);
+  return (
+    normalizeOrigin(process.env.CABINET_APP_ORIGIN) ||
+    runtimeOrigin ||
+    `http://127.0.0.1:${getAppPort()}`
+  );
 }
 
 export function getPublicDaemonOrigin(): string {
+  const runtimeOrigin = normalizeOrigin(readRuntimePorts().daemon?.origin);
   return (
     normalizeOrigin(process.env.CABINET_PUBLIC_DAEMON_ORIGIN) ||
+    runtimeOrigin ||
     `http://127.0.0.1:${getDaemonPort()}`
   );
 }
 
 export function getPublicDaemonWsOrigin(): string {
+  const runtimeWsOrigin = normalizeOrigin(readRuntimePorts().daemon?.wsOrigin);
+  if (runtimeWsOrigin) {
+    return runtimeWsOrigin;
+  }
   const origin = getPublicDaemonOrigin();
   if (origin.startsWith("ws://") || origin.startsWith("wss://")) {
     return origin;
@@ -108,7 +161,11 @@ export function getPublicDaemonWsOrigin(): string {
 }
 
 export function getDaemonUrl(): string {
-  return normalizeOrigin(process.env.CABINET_DAEMON_URL) || getPublicDaemonOrigin();
+  return (
+    normalizeOrigin(process.env.CABINET_DAEMON_URL) ||
+    normalizeOrigin(readRuntimePorts().daemon?.origin) ||
+    getPublicDaemonOrigin()
+  );
 }
 
 export function getReleaseManifestUrl(): string {

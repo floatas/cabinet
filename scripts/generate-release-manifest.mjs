@@ -33,6 +33,8 @@ const manifest = {
   sourceTarballUrl: `${repositoryUrl}/archive/refs/tags/${tag}.tar.gz`,
   npmPackage: "create-cabinet",
   createCabinetVersion: version,
+  cabinetaiPackage: "cabinetai",
+  cabinetaiVersion: version,
   electron: {
     macos: {
       zipAssetName: "Cabinet-darwin-arm64.zip",

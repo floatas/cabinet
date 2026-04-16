@@ -18,6 +18,7 @@ const stagedSeedDir = path.join(standaloneDir, ".seed");
 const bundledNodeBinaryPath = path.join(standaloneBinDir, "node");
 const rootNodePtyDir = path.join(projectRoot, "node_modules", "node-pty");
 const dataDir = path.join(projectRoot, "data");
+const agentLibraryDir = path.join(projectRoot, "src", "lib", "agents", "library");
 
 const STANDALONE_PRUNE_PATHS = [
   ".agents",
@@ -51,7 +52,6 @@ const STANDALONE_PRUNE_PATHS = [
   "next.config.ts",
   "package-lock.json",
   "postcss.config.mjs",
-  "run-agent.sh",
   "skills-lock.json",
   "tsconfig.json",
   "tsconfig.tsbuildinfo",
@@ -154,7 +154,7 @@ async function stageSeedContent() {
 
   // Agent library templates
   await copyDirectory(
-    path.join(dataDir, ".agents", ".library"),
+    agentLibraryDir,
     path.join(stagedSeedDir, ".agents", ".library")
   );
 

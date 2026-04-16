@@ -1,0 +1,30 @@
+id: weekly-market-map
+name: Weekly Market Map Update
+description: Synthesizes the week's market signals across AI, DevTools, Climate, and SaaS into a structured sector update every Friday afternoon.
+ownerAgent: analyst
+agentSlug: analyst
+enabled: true
+schedule: "0 16 * * 5"
+provider: claude-code
+timeout: 600
+prompt: |-
+  Every Friday afternoon, produce a brief market map update for Warp Ventures' three core sectors.
+
+  Review the week's intelligence across:
+  - intelligence/x-watchlist/ai-ml.md
+  - intelligence/x-watchlist/developer-tools.md
+  - intelligence/x-watchlist/climate-tech.md
+  - intelligence/x-watchlist/b2b-saas.md
+  - The week's daily-brief.md entries
+
+  Synthesize the week's signal into a structured update appended to intelligence/index.md under "Weekly Market Map — [Date]":
+
+  For each sector (AI/ML, DevTools, Climate, B2B SaaS):
+  - 1 sentence: what shifted this week
+  - 1 sentence: implication for Warp portfolio or deal flow
+  - Any new whitespace opportunities observed
+
+  End with: "Deals to watch next week" — 1-2 companies in the pipeline worth prioritizing based on market signals.
+cabinetPath: vc-os
+createdAt: "2026-04-13T00:00:00.000Z"
+updatedAt: "2026-04-13T00:00:00.000Z"

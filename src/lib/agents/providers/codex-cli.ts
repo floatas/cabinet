@@ -12,6 +12,14 @@ export const codexCliProvider: AgentProvider = {
     { title: "Install Codex CLI", detail: "npm i -g @openai/codex" },
     { title: "Log in", detail: "Run codex in your terminal and follow the login prompts." },
   ],
+  detachedPromptLaunchMode: "one-shot",
+  models: [
+    { id: "o3", name: "o3", description: "Most capable reasoning" },
+    { id: "o4-mini", name: "o4-mini", description: "Fast reasoning" },
+    { id: "gpt-4.1", name: "GPT-4.1", description: "Flagship GPT model" },
+    { id: "gpt-4.1-mini", name: "GPT-4.1 Mini", description: "Fast and affordable" },
+    { id: "gpt-4.1-nano", name: "GPT-4.1 Nano", description: "Fastest, lowest cost" },
+  ],
   command: "codex",
   commandCandidates: [
     `${process.env.HOME || ""}/.local/bin/codex`,

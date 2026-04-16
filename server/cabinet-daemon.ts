@@ -21,18 +21,26 @@ import chokidar from "chokidar";
 import matter from "gray-matter";
 import { getDb, closeDb } from "./db";
 import { DATA_DIR } from "../src/lib/storage/path-utils";
+import { discoverCabinetPathsSync } from "../src/lib/cabinets/discovery";
+import { resolveCabinetDir } from "../src/lib/cabinets/server-paths";
 import {
   getAppOrigin,
   getDaemonPort,
 } from "../src/lib/runtime/runtime-config";
-import { getSessionLaunchSpec, resolveProviderId } from "../src/lib/agents/provider-runtime";
+import {
+  getDetachedPromptLaunchMode,
+  getOneShotLaunchSpec,
+  getSessionLaunchSpec,
+  resolveProviderId,
+} from "../src/lib/agents/provider-runtime";
 import { getNvmNodeBin } from "../src/lib/agents/nvm-path";
 import {
   appendConversationTranscript,
   finalizeConversation,
-  parseCabinetBlock,
+  listConversationMetas,
   readConversationMeta,
   readConversationTranscript,
+  transcriptShowsCompletedRun,
 } from "../src/lib/agents/conversation-store";
 import {
   getTokenFromAuthorizationHeader,
@@ -44,15 +52,50 @@ import {
 } from "../src/lib/jobs/job-normalization";
 
 const PORT = getDaemonPort();
-const AGENTS_DIR = path.join(DATA_DIR, ".agents");
-const ALLOWED_BROWSER_ORIGINS = new Set(
-  [
-    getAppOrigin(),
-    ...(process.env.CABINET_APP_ORIGIN
-      ? process.env.CABINET_APP_ORIGIN.split(",").map((value) => value.trim()).filter(Boolean)
-      : []),
-  ]
-);
+const CABINET_MANIFEST_FILE = ".cabinet";
+
+interface CabinetEntry {
+  /** Relative path from DATA_DIR, empty string for root */
+  relPath: string;
+  /** Absolute directory path */
+  absDir: string;
+}
+
+function discoverAllCabinets(): CabinetEntry[] {
+  return discoverCabinetPathsSync().map((relPath) => ({
+    relPath,
+    absDir: resolveCabinetDir(relPath),
+  }));
+}
+
+function isLoopbackOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return ["127.0.0.1", "localhost", "::1", "[::1]"].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function getAllowedBrowserOrigins(): Set<string> {
+  return new Set(
+    [
+      getAppOrigin(),
+      ...(process.env.CABINET_APP_ORIGIN
+        ? process.env.CABINET_APP_ORIGIN.split(",").map((value) => value.trim()).filter(Boolean)
+        : []),
+    ]
+  );
+}
+
+function browserOriginAllowed(origin: string | undefined): boolean {
+  if (!origin) return false;
+  if (getAllowedBrowserOrigins().has(origin)) {
+    return true;
+  }
+
+  return isLoopbackOrigin(origin);
+}
 
 // ----- Database Initialization -----
 
@@ -89,11 +132,16 @@ interface PtySession {
   autoExitFallbackTimer?: NodeJS.Timeout;
   resolvedStatus?: "completed" | "failed";
   resolvingStatus?: boolean;
+  claudeCompletionTimer?: NodeJS.Timeout;
   readyStrategy?: "claude";
+  outputMode?: "plain" | "claude-stream-json";
+  structuredOutputBuffer?: string;
+  streamedText?: string;
 }
 
 const sessions = new Map<string, PtySession>();
 const completedOutput = new Map<string, { output: string; completedAt: number }>();
+const CLAUDE_AUTO_EXIT_GRACE_MS = 1200;
 
 function resolveSessionCwd(input?: string): string {
   if (!input) return DATA_DIR;
@@ -108,8 +156,8 @@ function resolveSessionCwd(input?: string): string {
 
 function applyCors(req: http.IncomingMessage, res: http.ServerResponse): void {
   const origin = req.headers.origin;
-  if (origin && ALLOWED_BROWSER_ORIGINS.has(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
+  if (browserOriginAllowed(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin ?? "");
     res.setHeader("Vary", "Origin");
   }
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -145,72 +193,22 @@ function claudePromptReady(output: string): boolean {
   );
 }
 
-function claudeIdlePromptVisible(output: string): boolean {
-  const plain = stripAnsi(output).replace(/\r/g, "\n");
-  return /(?:^|\n)[❯>]\s*$/.test(plain);
+function clearClaudeCompletionTimer(session: PtySession): void {
+  if (!session.claudeCompletionTimer) return;
+  clearTimeout(session.claudeCompletionTimer);
+  delete session.claudeCompletionTimer;
 }
 
-function transcriptShowsCompletedRun(output: string, prompt?: string): boolean {
-  // Keep this prompt-aware. If we count placeholder SUMMARY/ARTIFACT lines from
-  // the echoed startup prompt as "completed", the UI flips out of live terminal
-  // mode after a few seconds and the session appears corrupted.
-  const parsed = parseCabinetBlock(output, prompt);
-  if (parsed.summary || parsed.artifactPaths.length > 0) {
-    return true;
-  }
-
-  const plain = stripAnsi(output).replace(/\r/g, "\n");
-  return (
-    claudeIdlePromptVisible(plain)
-  );
-}
-
-function submitInitialPrompt(session: PtySession): void {
-  if (!session.initialPrompt || session.initialPromptSent || session.exited) {
+function completeClaudeSession(session: PtySession, output: string): void {
+  if (session.exited || session.autoExitRequested || session.resolvedStatus) {
     return;
   }
 
-  session.initialPromptSent = true;
-  session.promptSubmittedOutputLength = session.output.join("").length;
-  if (session.initialPromptTimer) {
-    clearTimeout(session.initialPromptTimer);
-    delete session.initialPromptTimer;
-  }
-
-  session.pty.write(session.initialPrompt);
-  session.pty.write("\r");
-}
-
-async function syncConversationChunk(sessionId: string, chunk: string): Promise<void> {
-  const meta = await readConversationMeta(sessionId);
-  if (!meta) return;
-  const plainChunk = stripAnsi(chunk);
-  if (!plainChunk) return;
-  await appendConversationTranscript(sessionId, plainChunk);
-}
-
-function maybeAutoExitClaudeSession(session: PtySession): void {
-  if (
-    !session.initialPrompt ||
-    !session.initialPromptSent ||
-    session.exited ||
-    session.autoExitRequested ||
-    session.resolvedStatus
-  ) {
-    return;
-  }
-
-  const submittedLength = session.promptSubmittedOutputLength ?? 0;
-  const currentOutput = session.output.join("");
-  if (currentOutput.length <= submittedLength) return;
-
-  const outputSincePrompt = currentOutput.slice(submittedLength);
-  if (!claudeIdlePromptVisible(outputSincePrompt)) return;
-
+  clearClaudeCompletionTimer(session);
   session.resolvedStatus = "completed";
   session.resolvingStatus = true;
   session.autoExitRequested = true;
-  const plain = stripAnsi(currentOutput);
+  const plain = stripAnsi(output);
   completedOutput.set(session.id, { output: plain, completedAt: Date.now() });
   void finalizeConversation(session.id, {
     status: "completed",
@@ -228,6 +226,212 @@ function maybeAutoExitClaudeSession(session: PtySession): void {
   }, 1500);
 }
 
+function extractClaudeDeltaText(payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "";
+
+  const parsed = payload as {
+    type?: string;
+    event?: {
+      type?: string;
+      delta?: { type?: string; text?: string };
+    };
+  };
+
+  if (
+    parsed.type === "stream_event" &&
+    parsed.event?.type === "content_block_delta" &&
+    parsed.event.delta?.type === "text_delta"
+  ) {
+    return parsed.event.delta.text || "";
+  }
+
+  return "";
+}
+
+function extractClaudeToolResultText(payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "";
+
+  const parsed = payload as {
+    type?: string;
+    tool_use_result?: {
+      stdout?: string;
+      stderr?: string;
+    };
+  };
+
+  if (parsed.type === "user" && parsed.tool_use_result) {
+    return [parsed.tool_use_result.stdout, parsed.tool_use_result.stderr]
+      .filter((value) => typeof value === "string" && value.trim())
+      .join("\n");
+  }
+
+  return "";
+}
+
+function extractClaudeFinalText(payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "";
+
+  const parsed = payload as {
+    type?: string;
+    result?: string;
+    message?: { content?: Array<{ type?: string; text?: string }> };
+  };
+
+  if (parsed.type === "assistant") {
+    return (
+      parsed.message?.content
+        ?.filter((item) => item?.type === "text" && typeof item.text === "string")
+        .map((item) => item.text || "")
+        .join("") || ""
+    );
+  }
+
+  if (parsed.type === "result" && typeof parsed.result === "string") {
+    return parsed.result;
+  }
+
+  return "";
+}
+
+function consumeStructuredOutput(session: PtySession, chunk: string): string {
+  if (session.outputMode !== "claude-stream-json") {
+    return chunk;
+  }
+
+  session.structuredOutputBuffer = `${session.structuredOutputBuffer || ""}${chunk}`;
+  const lines = session.structuredOutputBuffer.split(/\r?\n/);
+  session.structuredOutputBuffer = lines.pop() || "";
+
+  let display = "";
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const payload = JSON.parse(trimmed);
+      const deltaText = extractClaudeDeltaText(payload);
+      const toolText = extractClaudeToolResultText(payload);
+      const finalText =
+        (session.streamedText || "").length === 0
+          ? extractClaudeFinalText(payload)
+          : "";
+
+      if (deltaText) {
+        display += deltaText;
+        continue;
+      }
+
+      if (toolText) {
+        display += toolText.endsWith("\n") ? toolText : `${toolText}\n`;
+        continue;
+      }
+
+      if (finalText) {
+        display += finalText;
+      }
+    } catch {
+      // Ignore malformed partial lines and non-JSON diagnostics.
+    }
+  }
+
+  return display;
+}
+
+function flushStructuredOutput(session: PtySession): string {
+  if (session.outputMode !== "claude-stream-json" || !session.structuredOutputBuffer) {
+    return "";
+  }
+
+  const buffered = session.structuredOutputBuffer;
+  session.structuredOutputBuffer = "";
+
+  try {
+    if ((session.streamedText || "").length > 0) {
+      return "";
+    }
+    return extractClaudeFinalText(JSON.parse(buffered.trim()));
+  } catch {
+    return "";
+  }
+}
+
+function submitInitialPrompt(session: PtySession): void {
+  if (!session.initialPrompt || session.initialPromptSent || session.exited) {
+    return;
+  }
+
+  session.initialPromptSent = true;
+  session.promptSubmittedOutputLength = session.output.join("").length;
+  if (session.initialPromptTimer) {
+    clearTimeout(session.initialPromptTimer);
+    delete session.initialPromptTimer;
+  }
+
+  session.pty.write(session.initialPrompt);
+  // Small delay so the terminal processes the pasted text before Enter
+  setTimeout(() => {
+    if (!session.exited) {
+      session.pty.write("\r");
+    }
+  }, 150);
+}
+
+async function syncConversationChunk(sessionId: string, chunk: string): Promise<void> {
+  const meta = await readConversationMeta(sessionId);
+  if (!meta) return;
+  const plainChunk = stripAnsi(chunk);
+  if (!plainChunk) return;
+  await appendConversationTranscript(sessionId, plainChunk, meta.cabinetPath);
+}
+
+function maybeAutoExitClaudeSession(session: PtySession): void {
+  if (
+    !session.initialPrompt ||
+    !session.initialPromptSent ||
+    session.exited ||
+    session.autoExitRequested ||
+    session.resolvedStatus
+  ) {
+    return;
+  }
+
+  const submittedLength = session.promptSubmittedOutputLength ?? 0;
+  const currentOutput = session.output.join("");
+  if (currentOutput.length <= submittedLength) {
+    clearClaudeCompletionTimer(session);
+    return;
+  }
+
+  const outputSincePrompt = currentOutput.slice(submittedLength);
+  if (!transcriptShowsCompletedRun(outputSincePrompt, session.initialPrompt)) {
+    clearClaudeCompletionTimer(session);
+    return;
+  }
+
+  if (session.claudeCompletionTimer) {
+    return;
+  }
+
+  session.claudeCompletionTimer = setTimeout(() => {
+    delete session.claudeCompletionTimer;
+    if (session.exited || session.autoExitRequested || session.resolvedStatus) {
+      return;
+    }
+
+    const latestOutput = session.output.join("");
+    const latestSubmittedLength = session.promptSubmittedOutputLength ?? 0;
+    if (latestOutput.length <= latestSubmittedLength) {
+      return;
+    }
+
+    const latestSincePrompt = latestOutput.slice(latestSubmittedLength);
+    if (!transcriptShowsCompletedRun(latestSincePrompt, session.initialPrompt)) {
+      return;
+    }
+
+    completeClaudeSession(session, latestOutput);
+  }, CLAUDE_AUTO_EXIT_GRACE_MS);
+}
+
 async function finalizeSessionConversation(session: PtySession): Promise<void> {
   const meta = await readConversationMeta(session.id);
   if (!meta) return;
@@ -241,7 +445,7 @@ async function finalizeSessionConversation(session: PtySession): Promise<void> {
     status: session.resolvedStatus || (session.exitCode === 0 ? "completed" : "failed"),
     exitCode: session.resolvedStatus === "completed" ? 0 : session.exitCode,
     output: plain,
-  });
+  }, meta.cabinetPath);
 }
 
 // Cleanup old completed output every 5 minutes
@@ -375,14 +579,51 @@ function createDetachedSession(input: {
   cwd?: string;
   timeoutSeconds?: number;
   onData?: (chunk: string) => void;
+  launchMode?: "session" | "one-shot";
 }): PtySession {
   const cwd = resolveSessionCwd(input.cwd);
-  const launch = getSessionLaunchSpec({
-    providerId: input.providerId,
-    prompt: input.prompt,
-    workdir: cwd,
-  });
+  let launch =
+    input.launchMode === "one-shot" && input.prompt?.trim()
+      ? getOneShotLaunchSpec({
+          providerId: input.providerId,
+          prompt: input.prompt,
+          workdir: cwd,
+        })
+      : getSessionLaunchSpec({
+          providerId: input.providerId,
+          prompt: input.prompt,
+          workdir: cwd,
+        });
   const resolvedProviderId = resolveProviderId(input.providerId);
+
+  if (
+    input.launchMode === "one-shot" &&
+    resolvedProviderId === "claude-code"
+  ) {
+    const nextArgs: string[] = [];
+    for (let index = 0; index < launch.args.length; index += 1) {
+      const arg = launch.args[index];
+      if (arg === "--output-format") {
+        index += 1;
+        continue;
+      }
+      if (arg === "text" && launch.args[index - 1] === "--output-format") {
+        continue;
+      }
+      nextArgs.push(arg);
+    }
+
+    nextArgs.push(
+      "--verbose",
+      "--output-format",
+      "stream-json",
+      "--include-partial-messages"
+    );
+    launch = {
+      ...launch,
+      args: nextArgs,
+    };
+  }
 
   const term = pty.spawn(launch.command, launch.args, {
     name: "xterm-256color",
@@ -413,11 +654,21 @@ function createDetachedSession(input: {
     promptSubmittedOutputLength: 0,
     autoExitRequested: false,
     readyStrategy: launch.readyStrategy,
+    outputMode:
+      input.launchMode === "one-shot" && resolvedProviderId === "claude-code"
+        ? "claude-stream-json"
+        : "plain",
+    structuredOutputBuffer: "",
+    streamedText: "",
   };
   sessions.set(input.sessionId, session);
 
   term.onData((data: string) => {
-    session.output.push(data);
+    const displayChunk = consumeStructuredOutput(session, data);
+    if (displayChunk) {
+      session.output.push(displayChunk);
+      session.streamedText = `${session.streamedText || ""}${displayChunk}`;
+    }
     if (
       session.initialPrompt &&
       !session.initialPromptSent &&
@@ -427,11 +678,13 @@ function createDetachedSession(input: {
       submitInitialPrompt(session);
     }
     maybeAutoExitClaudeSession(session);
-    void syncConversationChunk(input.sessionId, data).catch(() => {});
-    if (session.ws && session.ws.readyState === WebSocket.OPEN) {
-      session.ws.send(data);
+    if (displayChunk) {
+      void syncConversationChunk(input.sessionId, displayChunk).catch(() => {});
+      if (session.ws && session.ws.readyState === WebSocket.OPEN) {
+        session.ws.send(displayChunk);
+      }
     }
-    input.onData?.(data);
+    input.onData?.(displayChunk);
   });
 
   term.onExit(({ exitCode }) => {
@@ -449,6 +702,14 @@ function createDetachedSession(input: {
     if (session.autoExitFallbackTimer) {
       clearTimeout(session.autoExitFallbackTimer);
       delete session.autoExitFallbackTimer;
+    }
+    clearClaudeCompletionTimer(session);
+
+    const trailingDisplay = flushStructuredOutput(session);
+    if (trailingDisplay) {
+      session.output.push(trailingDisplay);
+      session.streamedText = `${session.streamedText || ""}${trailingDisplay}`;
+      void syncConversationChunk(input.sessionId, trailingDisplay).catch(() => {});
     }
 
     const plain = stripAnsi(session.output.join(""));
@@ -533,6 +794,7 @@ interface JobConfig {
   prompt: string;
   timeout?: number;
   agentSlug: string;
+  cabinetPath: string;
 }
 
 const scheduledJobs = new Map<string, ReturnType<typeof cron.schedule>>();
@@ -559,7 +821,7 @@ function stopScheduledTasks(): void {
 }
 
 function scheduleJob(job: JobConfig): void {
-  const key = `${job.agentSlug}/${job.id}`;
+  const key = `${job.cabinetPath}::job::${job.agentSlug}/${job.id}`;
   const existingTask = scheduledJobs.get(key);
   if (existingTask) existingTask.stop();
 
@@ -573,6 +835,7 @@ function scheduleJob(job: JobConfig): void {
     void putJson(`${getAppOrigin()}/api/agents/${job.agentSlug}/jobs/${job.id}`, {
       action: "run",
       source: "scheduler",
+      cabinetPath: job.cabinetPath,
     }).catch((error) => {
       console.error(`Failed to trigger scheduled job ${key}:`, error);
     });
@@ -582,82 +845,136 @@ function scheduleJob(job: JobConfig): void {
   console.log(`  Scheduled job: ${key} (${job.schedule})`);
 }
 
-function scheduleHeartbeat(slug: string, cronExpr: string): void {
+function scheduleHeartbeat(slug: string, cronExpr: string, cabinetPath: string): void {
+  const key = `${cabinetPath}::heartbeat::${slug}`;
+
   if (!cron.validate(cronExpr)) {
-    console.warn(`Invalid heartbeat schedule for ${slug}: ${cronExpr}`);
+    console.warn(`Invalid heartbeat schedule for ${key}: ${cronExpr}`);
     return;
   }
 
   const task = cron.schedule(cronExpr, () => {
-    console.log(`Triggering heartbeat ${slug}`);
+    console.log(`Triggering heartbeat ${key}`);
     void putJson(`${getAppOrigin()}/api/agents/personas/${slug}`, {
       action: "run",
       source: "scheduler",
+      cabinetPath,
     }).catch((error) => {
-      console.error(`Failed to trigger heartbeat ${slug}:`, error);
+      console.error(`Failed to trigger heartbeat ${key}:`, error);
     });
   });
 
-  scheduledHeartbeats.set(slug, task);
-  console.log(`  Scheduled heartbeat: ${slug} (${cronExpr})`);
+  scheduledHeartbeats.set(key, task);
+  console.log(`  Scheduled heartbeat: ${key} (${cronExpr})`);
 }
 
 async function reloadSchedules(): Promise<void> {
   stopScheduledTasks();
 
-  if (!fs.existsSync(AGENTS_DIR)) return;
-
-  const entries = fs.readdirSync(AGENTS_DIR, { withFileTypes: true });
+  const cabinets = discoverAllCabinets();
   let jobCount = 0;
   let heartbeatCount = 0;
 
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+  for (const cabinet of cabinets) {
+    const agentsDir = path.join(cabinet.absDir, ".agents");
 
-    const personaPath = path.join(AGENTS_DIR, entry.name, "persona.md");
-    if (fs.existsSync(personaPath)) {
+    // --- Heartbeats from .agents/*/persona.md ---
+    if (fs.existsSync(agentsDir)) {
+      let agentEntries: fs.Dirent[];
       try {
-        const rawPersona = fs.readFileSync(personaPath, "utf-8");
-        const { data } = matter(rawPersona);
-        const active = data.active !== false;
-        const heartbeat = typeof data.heartbeat === "string" ? data.heartbeat : "";
-        if (active && heartbeat) {
-          scheduleHeartbeat(entry.name, heartbeat);
-          heartbeatCount++;
-        }
+        agentEntries = fs.readdirSync(agentsDir, { withFileTypes: true });
       } catch {
-        // Skip malformed personas.
+        agentEntries = [];
+      }
+
+      for (const entry of agentEntries) {
+        if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+
+        const personaPath = path.join(agentsDir, entry.name, "persona.md");
+        if (fs.existsSync(personaPath)) {
+          try {
+            const rawPersona = fs.readFileSync(personaPath, "utf-8");
+            const { data } = matter(rawPersona);
+            const active = data.active !== false;
+            const heartbeat = typeof data.heartbeat === "string" ? data.heartbeat : "";
+            if (active && heartbeat) {
+              scheduleHeartbeat(entry.name, heartbeat, cabinet.relPath);
+              heartbeatCount++;
+            }
+          } catch {
+            // Skip malformed personas.
+          }
+        }
       }
     }
 
-    const jobsDir = path.join(AGENTS_DIR, entry.name, "jobs");
-    if (!fs.existsSync(jobsDir)) continue;
-
-    const jobFiles = fs.readdirSync(jobsDir);
-    for (const jf of jobFiles) {
-      if (!jf.endsWith(".yaml")) continue;
-
+    // --- Cabinet-level jobs: .jobs/*.yaml ---
+    const cabinetJobsDir = path.join(cabinet.absDir, ".jobs");
+    if (fs.existsSync(cabinetJobsDir)) {
+      let jobFiles: string[];
       try {
-        const raw = fs.readFileSync(path.join(jobsDir, jf), "utf-8");
-        const config: JobConfig = {
-          ...normalizeJobConfig(
-            yaml.load(raw) as Partial<JobConfig>,
-            entry.name,
-            normalizeJobId(path.basename(jf, ".yaml"))
-          ),
-          agentSlug: entry.name,
-        };
-        if (config.id && config.enabled && config.schedule) {
-          scheduleJob(config);
-          jobCount++;
-        }
+        jobFiles = fs.readdirSync(cabinetJobsDir);
       } catch {
-        // Skip malformed jobs.
+        jobFiles = [];
+      }
+      for (const jf of jobFiles) {
+        if (!jf.endsWith(".yaml") && !jf.endsWith(".yml")) continue;
+        try {
+          const raw = fs.readFileSync(path.join(cabinetJobsDir, jf), "utf-8");
+          const parsed = yaml.load(raw) as Record<string, unknown>;
+          const ownerAgent = (parsed.ownerAgent as string) || (parsed.agentSlug as string) || "";
+          const config: JobConfig = {
+            ...normalizeJobConfig(
+              parsed as Partial<JobConfig>,
+              ownerAgent,
+              normalizeJobId(path.basename(jf, path.extname(jf)))
+            ),
+            agentSlug: ownerAgent,
+            cabinetPath: cabinet.relPath,
+          };
+          if (config.id && config.enabled && config.schedule && ownerAgent) {
+            scheduleJob(config);
+            jobCount++;
+          }
+        } catch {
+          // Skip malformed jobs.
+        }
       }
     }
   }
 
-  console.log(`Scheduled ${jobCount} jobs and ${heartbeatCount} heartbeats.`);
+  console.log(`Discovered ${cabinets.length} cabinet(s). Scheduled ${jobCount} jobs and ${heartbeatCount} heartbeats.`);
+}
+
+/**
+ * On startup: find any conversations still marked "running" from a previous
+ * daemon session and finalize them as failed. This prevents permanently-stuck
+ * spinners when the daemon crashes or is force-killed.
+ */
+async function cleanupStaleRunningConversations(): Promise<void> {
+  const cabinets = discoverAllCabinets();
+  let cleaned = 0;
+  for (const cabinet of cabinets) {
+    const cabinetPath = cabinet.relPath || undefined;
+    try {
+      const metas = await listConversationMetas({ status: "running", cabinetPath, limit: 1000 });
+      for (const meta of metas) {
+        // Only finalize if there is no live PTY session managing it
+        if (sessions.has(meta.id)) continue;
+        await finalizeConversation(
+          meta.id,
+          { status: "failed", exitCode: 1 },
+          cabinetPath
+        ).catch(() => {});
+        cleaned++;
+      }
+    } catch {
+      // Skip cabinets that fail to read
+    }
+  }
+  if (cleaned > 0) {
+    console.log(`Cleaned up ${cleaned} stale running conversation(s) from previous session.`);
+  }
 }
 
 function queueScheduleReload(): void {
@@ -699,6 +1016,26 @@ const server = http.createServer(async (req, res) => {
     if (active) {
       const raw = active.output.join("");
       const plain = stripAnsi(raw);
+      if (
+        active.readyStrategy === "claude" &&
+        active.initialPrompt &&
+        active.initialPromptSent &&
+        !active.exited &&
+        !active.autoExitRequested &&
+        !active.resolvedStatus &&
+        transcriptShowsCompletedRun(plain, active.initialPrompt)
+      ) {
+        completeClaudeSession(active, plain);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            sessionId,
+            status: "completed",
+            output: plain,
+          })
+        );
+        return;
+      }
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
@@ -797,12 +1134,17 @@ const server = http.createServer(async (req, res) => {
         }
 
         try {
+          const launchMode = getDetachedPromptLaunchMode({
+            providerId,
+            prompt,
+          });
           createDetachedSession({
             sessionId,
             providerId,
             prompt,
             cwd,
             timeoutSeconds,
+            launchMode,
           });
         } catch (err: unknown) {
           const errMsg = err instanceof Error ? err.message : String(err);
@@ -820,6 +1162,35 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ error: "Invalid JSON" }));
       }
     });
+    return;
+  }
+
+  // POST /session/:id/stop — kill a running PTY session
+  const stopMatch = url.pathname.match(/^\/session\/([^/]+)\/stop$/);
+  if (stopMatch && req.method === "POST") {
+    const sessionId = stopMatch[1];
+    const session = sessions.get(sessionId);
+    if (!session || session.exited) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Session not found or already exited" }));
+      return;
+    }
+    try {
+      // SIGTERM first, then SIGKILL after 2s if still alive
+      session.pty.kill();
+      const fallback = setTimeout(() => {
+        if (!session.exited) {
+          try { session.pty.kill("SIGKILL"); } catch {}
+        }
+      }, 2000);
+      session.pty.onExit(() => clearTimeout(fallback));
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, sessionId }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: msg }));
+    }
     return;
   }
 
@@ -901,11 +1272,16 @@ const server = http.createServer(async (req, res) => {
         const { agentSlug, jobId, prompt, providerId, timeoutSeconds } = JSON.parse(body);
         if (prompt) {
           const sessionId = jobId || `manual-${Date.now()}`;
+          const launchMode = getDetachedPromptLaunchMode({
+            providerId,
+            prompt,
+          });
           createDetachedSession({
             sessionId,
             providerId,
             prompt,
             timeoutSeconds,
+            launchMode,
           });
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: true, sessionId, agentSlug: agentSlug || "manual" }));
@@ -967,7 +1343,12 @@ wssEvents.on("connection", (ws) => {
 // ===== Startup =====
 
 const scheduleWatcher = chokidar.watch(
-  [path.join(AGENTS_DIR, "*/persona.md"), path.join(AGENTS_DIR, "*/jobs/*.yaml")],
+  [
+    path.join(DATA_DIR, "**", ".agents", "*", "persona.md"),
+    path.join(DATA_DIR, "**", ".jobs", "*.yaml"),
+    path.join(DATA_DIR, "**", ".agents", "*", "jobs", "*.yaml"),
+    path.join(DATA_DIR, "**", CABINET_MANIFEST_FILE),
+  ],
   {
     ignoreInitial: true,
   }
@@ -989,11 +1370,12 @@ server.listen(PORT, () => {
   console.log(`  Working directory: ${DATA_DIR}`);
 
   void reloadSchedules();
+  void cleanupStaleRunningConversations();
 });
 
 // ===== Graceful Shutdown =====
 
-process.on("SIGINT", () => {
+function shutdown(): void {
   console.log("\nShutting down...");
   for (const [, task] of scheduledJobs) {
     task.stop();
@@ -1008,7 +1390,10 @@ process.on("SIGINT", () => {
   closeDb();
   server.close();
   process.exit(0);
-});
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
 
 wssPty.on("error", (err) => {
   console.error("PTY WebSocket error:", err.message);

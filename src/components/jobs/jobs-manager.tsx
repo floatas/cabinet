@@ -16,10 +16,16 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { WebTerminal } from "@/components/terminal/web-terminal";
 import { ConversationResultView } from "@/components/agents/conversation-result-view";
+import {
+  appendConversationCabinetPath,
+  buildConversationInstanceKey,
+} from "@/lib/agents/conversation-identity";
 import { cronToHuman } from "@/lib/agents/cron-utils";
-import { useTreeStore } from "@/stores/tree-store";
 import { useAppStore } from "@/stores/app-store";
+import { ROOT_CABINET_PATH } from "@/lib/cabinets/paths";
+import { openArtifactPath } from "@/lib/navigation/open-artifact-path";
 import { cn } from "@/lib/utils";
+import type { CabinetVisibilityMode } from "@/types/cabinets";
 import type { ConversationDetail, ConversationMeta } from "@/types/conversations";
 import type { JobConfig } from "@/types/jobs";
 import type { JobLibraryTemplate } from "@/lib/jobs/job-library";
@@ -113,7 +119,13 @@ function FilterChip({
   );
 }
 
-export function JobsManager() {
+export function JobsManager({
+  cabinetPath,
+  workspaceMode,
+}: {
+  cabinetPath?: string;
+  workspaceMode?: "ops" | "cabinet";
+} = {}) {
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [selectedAgentSlug, setSelectedAgentSlug] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<AgentSummary | null>(null);
@@ -124,6 +136,9 @@ export function JobsManager() {
   const [libraryTemplates, setLibraryTemplates] = useState<JobLibraryTemplate[]>([]);
   const [conversations, setConversations] = useState<ConversationMeta[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [selectedConversationCabinetPath, setSelectedConversationCabinetPath] = useState<
+    string | undefined
+  >(undefined);
   const [selectedConversation, setSelectedConversation] = useState<ConversationDetail | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [mode, setMode] = useState<MainPanelMode>("settings");
@@ -134,15 +149,28 @@ export function JobsManager() {
   const [runningHeartbeat, setRunningHeartbeat] = useState(false);
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
   const [runningJobId, setRunningJobId] = useState<string | null>(null);
-  const selectPage = useTreeStore((state) => state.selectPage);
-  const setSection = useAppStore((state) => state.setSection);
+  const cabinetVisibilityModes = useAppStore((state) => state.cabinetVisibilityModes);
+  const resolvedWorkspaceMode = workspaceMode || (cabinetPath ? "cabinet" : "ops");
+  const effectiveCabinetPath = cabinetPath || ROOT_CABINET_PATH;
+  const effectiveVisibilityMode: CabinetVisibilityMode =
+    resolvedWorkspaceMode === "ops"
+      ? "all"
+      : cabinetVisibilityModes[effectiveCabinetPath] || "own";
 
   async function refreshAgents() {
     setLoadingAgents(true);
     try {
-      const response = await fetch("/api/agents/personas");
+      const params = new URLSearchParams({
+        path: effectiveCabinetPath,
+        visibility: effectiveVisibilityMode,
+      });
+      const response = await fetch(`/api/cabinets/overview?${params.toString()}`);
       if (!response.ok) return;
       const data = await response.json();
+      if (Array.isArray(data.agents)) {
+        setAgents((data.agents || []) as AgentSummary[]);
+        return;
+      }
       setAgents((data.personas || []) as AgentSummary[]);
     } finally {
       setLoadingAgents(false);
@@ -159,9 +187,10 @@ export function JobsManager() {
       return;
     }
 
+    const cabinetQuery = `?cabinetPath=${encodeURIComponent(effectiveCabinetPath)}`;
     const [personaResponse, jobsResponse] = await Promise.all([
-      fetch(`/api/agents/personas/${agentSlug}`),
-      fetch(`/api/agents/${agentSlug}/jobs`),
+      fetch(`/api/agents/personas/${agentSlug}${cabinetQuery}`),
+      fetch(`/api/agents/${agentSlug}/jobs${cabinetQuery}`),
     ]);
 
     if (personaResponse.ok) {
@@ -183,6 +212,12 @@ export function JobsManager() {
     try {
       const params = new URLSearchParams();
       if (selectedAgentSlug) params.set("agent", selectedAgentSlug);
+      if (effectiveCabinetPath) {
+        params.set("cabinetPath", effectiveCabinetPath);
+        if (effectiveVisibilityMode !== "own") {
+          params.set("visibilityMode", effectiveVisibilityMode);
+        }
+      }
       const status = statusFromFilter(statusFilter);
       if (status) params.set("status", status);
       params.set("limit", "200");
@@ -203,7 +238,12 @@ export function JobsManager() {
       setSelectedConversation(null);
       return;
     }
-    const response = await fetch(`/api/agents/conversations/${conversationId}`);
+    const response = await fetch(
+      appendConversationCabinetPath(
+        `/api/agents/conversations/${conversationId}`,
+        selectedConversationCabinetPath
+      )
+    );
     if (!response.ok) return;
     setSelectedConversation((await response.json()) as ConversationDetail);
   }
@@ -218,18 +258,31 @@ export function JobsManager() {
   useEffect(() => {
     void refreshAgents();
     void refreshLibrary();
-  }, []);
+  }, [effectiveCabinetPath, effectiveVisibilityMode]);
 
   useEffect(() => {
     void refreshSelectedAgent(selectedAgentSlug);
     setMode("settings");
     setSelectedConversationId(null);
+    setSelectedConversationCabinetPath(undefined);
     setSelectedConversation(null);
-  }, [selectedAgentSlug]);
+  }, [effectiveCabinetPath, selectedAgentSlug]);
 
   useEffect(() => {
     void refreshConversations();
-  }, [selectedAgentSlug, statusFilter]);
+  }, [effectiveCabinetPath, effectiveVisibilityMode, selectedAgentSlug, statusFilter]);
+
+  useEffect(() => {
+    setSelectedAgentSlug(null);
+    setSelectedAgent(null);
+    setJobs([]);
+    setSelectedJobId(null);
+    setJobDraft(null);
+    setSelectedConversationId(null);
+    setSelectedConversationCabinetPath(undefined);
+    setSelectedConversation(null);
+    setMode("settings");
+  }, [effectiveCabinetPath]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -237,12 +290,12 @@ export function JobsManager() {
       void refreshConversations();
     }, 4000);
     return () => window.clearInterval(interval);
-  }, [selectedAgentSlug, statusFilter]);
+  }, [effectiveCabinetPath, effectiveVisibilityMode, selectedAgentSlug, statusFilter]);
 
   useEffect(() => {
     if (!selectedConversationId) return;
     void loadConversationDetail(selectedConversationId);
-  }, [selectedConversationId]);
+  }, [selectedConversationCabinetPath, selectedConversationId]);
 
   useEffect(() => {
     if (!selectedJobId) {
@@ -264,7 +317,9 @@ export function JobsManager() {
   }, [jobs, selectedAgentSlug, selectedJobId]);
 
   const selectedConversationMeta = conversations.find(
-    (conversation) => conversation.id === selectedConversationId
+    (conversation) =>
+      conversation.id === selectedConversationId &&
+      (conversation.cabinetPath || "") === (selectedConversationCabinetPath || "")
   );
 
   async function saveHeartbeat() {
@@ -274,7 +329,7 @@ export function JobsManager() {
       await fetch(`/api/agents/personas/${selectedAgentSlug}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ heartbeat: heartbeatDraft }),
+        body: JSON.stringify({ heartbeat: heartbeatDraft, cabinetPath: effectiveCabinetPath }),
       });
       await refreshAgents();
       await refreshSelectedAgent(selectedAgentSlug);
@@ -290,12 +345,13 @@ export function JobsManager() {
       const response = await fetch(`/api/agents/personas/${selectedAgentSlug}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "run" }),
+        body: JSON.stringify({ action: "run", cabinetPath: effectiveCabinetPath }),
       });
       if (!response.ok) return;
       const data = await response.json();
       if (data.sessionId) {
         setSelectedConversationId(data.sessionId as string);
+        setSelectedConversationCabinetPath(effectiveCabinetPath);
         setMode("conversation");
         await refreshConversations();
       }
@@ -320,6 +376,7 @@ export function JobsManager() {
         body: JSON.stringify({
           ...jobDraft,
           id: jobDraft.id || undefined,
+          cabinetPath: effectiveCabinetPath,
         }),
       });
       if (!response.ok) return;
@@ -336,7 +393,11 @@ export function JobsManager() {
     if (!selectedAgentSlug) return;
     setDeletingJobId(jobId);
     try {
-      await fetch(`/api/agents/${selectedAgentSlug}/jobs/${jobId}`, { method: "DELETE" });
+      const params = new URLSearchParams();
+      params.set("cabinetPath", effectiveCabinetPath);
+      await fetch(`/api/agents/${selectedAgentSlug}/jobs/${jobId}?${params.toString()}`, {
+        method: "DELETE",
+      });
       if (selectedJobId === jobId) {
         setSelectedJobId(null);
         setJobDraft(null);
@@ -352,7 +413,7 @@ export function JobsManager() {
     await fetch(`/api/agents/${selectedAgentSlug}/jobs/${job.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "toggle" }),
+      body: JSON.stringify({ action: "toggle", cabinetPath: effectiveCabinetPath }),
     });
     await refreshSelectedAgent(selectedAgentSlug);
     await refreshConversations();
@@ -365,12 +426,13 @@ export function JobsManager() {
       const response = await fetch(`/api/agents/${selectedAgentSlug}/jobs/${jobId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "run" }),
+        body: JSON.stringify({ action: "run", cabinetPath: effectiveCabinetPath }),
       });
       if (!response.ok) return;
       const data = await response.json();
       if (data.run?.id) {
         setSelectedConversationId(data.run.id as string);
+        setSelectedConversationCabinetPath(effectiveCabinetPath);
         setMode("conversation");
         await refreshConversations();
       }
@@ -502,14 +564,18 @@ export function JobsManager() {
           ) : (
             <div>
               {conversations.map((conversation) => {
-                const isSelected = selectedConversationId === conversation.id;
+                const conversationKey = buildConversationInstanceKey(conversation);
+                const isSelected =
+                  selectedConversationId === conversation.id &&
+                  (selectedConversationCabinetPath || "") === (conversation.cabinetPath || "");
                 const agent = agents.find((entry) => entry.slug === conversation.agentSlug);
 
                 return (
                   <button
-                    key={conversation.id}
+                    key={conversationKey}
                     onClick={() => {
                       setSelectedConversationId(conversation.id);
+                      setSelectedConversationCabinetPath(conversation.cabinetPath);
                       setMode("conversation");
                     }}
                     className={cn(
@@ -571,6 +637,7 @@ export function JobsManager() {
                     onClick={() => {
                       setMode("settings");
                       setSelectedConversationId(null);
+                      setSelectedConversationCabinetPath(undefined);
                     }}
                   >
                     <Settings2 className="h-3.5 w-3.5" />
@@ -580,8 +647,16 @@ export function JobsManager() {
                     <button
                       key={artifact.path}
                       onClick={() => {
-                        selectPage(artifact.path);
-                        setSection({ type: "page" });
+                        void openArtifactPath(
+                          artifact.path,
+                          effectiveCabinetPath
+                            ? {
+                                type: "page",
+                                mode: "cabinet",
+                                cabinetPath: effectiveCabinetPath,
+                              }
+                            : { type: "page" }
+                        );
                       }}
                       className="rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground"
                     >
@@ -606,8 +681,16 @@ export function JobsManager() {
                 <ConversationResultView
                   detail={selectedConversation}
                   onOpenArtifact={(artifactPath) => {
-                    selectPage(artifactPath);
-                    setSection({ type: "page" });
+                    void openArtifactPath(
+                      artifactPath,
+                      effectiveCabinetPath
+                        ? {
+                            type: "page",
+                            mode: "cabinet",
+                            cabinetPath: effectiveCabinetPath,
+                          }
+                        : { type: "page" }
+                    );
                   }}
                 />
               ) : (

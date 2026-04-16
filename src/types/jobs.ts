@@ -11,12 +11,14 @@ export interface JobConfig {
   enabled: boolean;
   schedule: string;
   provider: string;
+  ownerAgent?: string;
   agentSlug?: string;
   workdir?: string;
   timeout?: number;
   prompt: string;
   on_complete?: JobPostAction[];
   on_failure?: JobPostAction[];
+  cabinetPath?: string;
   createdAt: string;
   updatedAt: string;
 }

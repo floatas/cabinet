@@ -15,33 +15,26 @@ import { FileFallbackViewer } from "@/components/editor/file-fallback-viewer";
 import { HomeScreen } from "@/components/home/home-screen";
 import { AgentsWorkspace } from "@/components/agents/agents-workspace";
 import { JobsManager } from "@/components/jobs/jobs-manager";
+import { TasksBoard } from "@/components/tasks/tasks-board";
 import { SettingsPage } from "@/components/settings/settings-page";
 import { TerminalTabs } from "@/components/terminal/terminal-tabs";
 import { AIPanel } from "@/components/ai-panel/ai-panel";
+import { TaskDetailPanel } from "@/components/tasks/task-detail-panel";
 import { SearchDialog } from "@/components/search/search-dialog";
 import { KeyboardShortcuts } from "@/components/shortcuts/keyboard-shortcuts";
 import { StatusBar } from "@/components/layout/status-bar";
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 import { UpdateDialog } from "@/components/layout/update-dialog";
 import { NotificationToasts } from "@/components/layout/notification-toasts";
+import { CabinetView } from "@/components/cabinets/cabinet-view";
+import { RegistryBrowser } from "@/components/registry/registry-browser";
+import { findNodeByPath } from "@/lib/cabinets/tree";
 import { useCabinetUpdate } from "@/hooks/use-cabinet-update";
 import { useHashRoute } from "@/hooks/use-hash-route";
 import { useTreeStore } from "@/stores/tree-store";
 import { useAppStore } from "@/stores/app-store";
-import type { TreeNode } from "@/types";
 
 const DISMISSED_UPDATE_STORAGE_KEY = "cabinet.dismissed-update-version";
-
-function findNode(nodes: TreeNode[], path: string): TreeNode | null {
-  for (const node of nodes) {
-    if (node.path === path) return node;
-    if (node.children) {
-      const found = findNode(node.children, path);
-      if (found) return found;
-    }
-  }
-  return null;
-}
 
 export function AppShell() {
   const loadTree = useTreeStore((s) => s.loadTree);
@@ -54,6 +47,7 @@ export function AppShell() {
   const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
   const setAiPanelCollapsed = useAppStore((s) => s.setAiPanelCollapsed);
   const aiPanelCollapsed = useAppStore((s) => s.aiPanelCollapsed);
+  const taskPanelConversation = useAppStore((s) => s.taskPanelConversation);
   const {
     update,
     refreshing: updateRefreshing,
@@ -133,7 +127,7 @@ export function AppShell() {
     setUpdateDialogOpen(false);
   }
 
-  const selectedNode = selectedPath ? findNode(nodes, selectedPath) : null;
+  const selectedNode = selectedPath ? findNodeByPath(nodes, selectedPath) : null;
   // For paths not in the tree (e.g. .agents/ workspace files), infer type from extension
   const inferredType = !selectedNode && selectedPath
     ? selectedPath.endsWith(".csv") ? "csv"
@@ -184,21 +178,51 @@ export function AppShell() {
   const renderContent = () => {
     // System sections (non-page views)
     if (section.type === "home") return <HomeScreen />;
+    if (section.type === "registry") return <RegistryBrowser />;
     if (section.type === "settings") return <SettingsPage />;
+    if (section.type === "cabinet" && section.cabinetPath) {
+      return <CabinetView cabinetPath={section.cabinetPath} />;
+    }
     if (section.type === "agents") {
-      return <AgentsWorkspace selectedScope="all" selectedAgentSlug={null} />;
+      return (
+        <AgentsWorkspace
+          selectedScope="all"
+          selectedAgentSlug={null}
+          cabinetPath={section.cabinetPath}
+          workspaceMode={section.mode}
+        />
+      );
     }
     if (section.type === "agent") {
       return (
         <AgentsWorkspace
           selectedScope="agent"
           selectedAgentSlug={section.slug || null}
+          cabinetPath={section.cabinetPath}
+          workspaceMode={section.mode}
         />
       );
     }
-    if (section.type === "jobs") return <JobsManager />;
+    if (section.type === "tasks") {
+      return (
+        <TasksBoard
+          cabinetPath={section.cabinetPath}
+          workspaceMode={section.mode}
+        />
+      );
+    }
+    if (section.type === "jobs") {
+      return (
+        <JobsManager
+          cabinetPath={section.cabinetPath}
+          workspaceMode={section.mode}
+        />
+      );
+    }
 
     // Page-based views (when a KB page is selected)
+    // A cabinet's own markdown can be opened as a data page, so only render
+    // the dashboard when navigation explicitly targets the cabinet section.
     if (isApp && selectedNode) {
       return (
         <WebsiteViewer
@@ -297,6 +321,7 @@ export function AppShell() {
         {terminalOpen && <TerminalTabs />}
         <StatusBar />
       </div>
+      {taskPanelConversation && <TaskDetailPanel />}
       {!aiPanelCollapsed && <AIPanel />}
       <SearchDialog />
       <KeyboardShortcuts />

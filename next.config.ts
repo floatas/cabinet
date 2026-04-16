@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   output: "standalone",
   serverExternalPackages: ["node-pty", "simple-git", "better-sqlite3"],
   outputFileTracingExcludes: {

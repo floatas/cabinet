@@ -1,0 +1,25 @@
+{
+  "id": "2026-04-13T13-41-05-331Z-d7740e08-ceo-heartbeat",
+  "agentSlug": "ceo",
+  "cabinetPath": "example-text-your-mom",
+  "title": "CEO heartbeat",
+  "trigger": "heartbeat",
+  "status": "completed",
+  "startedAt": "2026-04-13T13:41:05.331Z",
+  "promptPath": "example-text-your-mom/.agents/.conversations/2026-04-13T13-41-05-331Z-d7740e08-ceo-heartbeat/prompt.md",
+  "transcriptPath": "example-text-your-mom/.agents/.conversations/2026-04-13T13-41-05-331Z-d7740e08-ceo-heartbeat/transcript.txt",
+  "mentionedPaths": [],
+  "artifactPaths": [
+    "company/goals/index.md",
+    "company/finance/index.md",
+    "company/team/index.md",
+    "marketing/tiktok/.jobs/daily-trend-scan.yaml",
+    "marketing/tiktok/.jobs/daily-creative-queue.yaml",
+    "marketing/reddit/.jobs/subreddit-signal-scan.yaml",
+    "marketing/reddit/.jobs/comment-opportunity-scan.yaml"
+  ],
+  "completedAt": "2026-04-13T13:46:06.399Z",
+  "exitCode": 0,
+  "summary": "Executed marketing activation — enabled 6 jobs, updated team to 16/16 active, sent marching orders, answered CFO data request.",
+  "contextSummary": "B1 resolved. B4 partially resolved. Week of April 14 is first real execution week. Tuesday Proof-of-Life is the first checkpoint. April 26 is the hard reassessment date for 50K MAU target."
+}

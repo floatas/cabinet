@@ -1,0 +1,25 @@
+id: competitor-intelligence
+name: Weekly Competitor Intelligence
+enabled: true
+schedule: 0 9 * * 4
+provider: claude-code
+ownerAgent: analyst
+agentSlug: analyst
+timeout: 600
+prompt: |-
+  Every Thursday, update Warp Ventures' competitive intelligence on other VC firms.
+
+  Focus on signals that affect deal flow or LP relationships:
+  - New fund announcements from a16z, Sequoia, First Round, Greylock, Lowercarbon, Battery, Redpoint
+  - New investments in sectors overlapping with Warp's thesis (AI/ML, Climate, DevTools, B2B SaaS)
+  - Notable portfolio exits, markdowns, or shutdowns at competitor firms
+  - Partner moves (new GPs hired, partners leaving)
+  - Any pricing or term changes that indicate competitive pressure on deal economics
+
+  For each material development, append a brief entry to competitors/index.md under a "Key Intelligence" section with today's date.
+  Format: Firm name bold, one sentence what happened, one sentence why it matters for Warp.
+
+  Also note which of Warp's active pipeline deals (from deal-flow/active-deals.csv) might be affected by competitor activity this week.
+cabinetPath: vc-os
+createdAt: '2026-04-13T00:00:00.000Z'
+updatedAt: '2026-04-13T00:00:00.000Z'

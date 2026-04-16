@@ -5,6 +5,7 @@ import { ExternalLink, FileText, Files, PackageOpen, Sparkles, CheckCircle, XCir
 import type { ConversationDetail } from "@/types/conversations";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { appendConversationCabinetPath } from "@/lib/agents/conversation-identity";
 
 function StatusBadge({ status }: { status: string }) {
   const isCompleted = status === "completed";
@@ -14,7 +15,7 @@ function StatusBadge({ status }: { status: string }) {
     ? "text-emerald-400 bg-emerald-400/10 border-emerald-400/20"
     : isFailed
       ? "text-red-400 bg-red-400/10 border-red-400/20"
-      : "text-amber-400 bg-amber-400/10 border-amber-400/20";
+      : "text-emerald-400 bg-emerald-400/10 border-emerald-400/20";
 
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${color}`}>
@@ -31,7 +32,10 @@ export function ConversationResultView({
   detail: ConversationDetail;
   onOpenArtifact: (path: string) => void;
 }) {
-  const transcriptUrl = `/agents/conversations/${detail.meta.id}`;
+  const transcriptUrl = appendConversationCabinetPath(
+    `/agents/conversations/${detail.meta.id}`,
+    detail.meta.cabinetPath
+  );
   const promptText = detail.request || detail.meta.title;
   const [promptHtml, setPromptHtml] = useState("");
 

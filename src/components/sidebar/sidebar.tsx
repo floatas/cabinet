@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { TreeView } from "./tree-view";
 import { NewPageDialog } from "./new-page-dialog";
+import { NewCabinetDialog } from "./new-cabinet-dialog";
 import { useAppStore } from "@/stores/app-store";
 
 function useIsMobile() {
@@ -139,6 +140,9 @@ export function Sidebar() {
         <div className="p-2 flex items-center gap-1">
           <div className="flex-1">
             <NewPageDialog />
+          </div>
+          <div className="flex-1">
+            <NewCabinetDialog />
           </div>
           <Button
             variant="ghost"

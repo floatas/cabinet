@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Warp Intelligence Feed</title>
+<style>
+  :root { --bg:#fce7f3; --surface:#16161a; --surface2:#1e1e24; --border:#2a2a35; --accent:#7c5cfc; --text:#e8e8f0; --muted:#888899; --green:#4ade80; --orange:#fb923c; --red:#f87171; --blue:#4fc3f7; --pink:#f472b6; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font-family:-apple-system,'Inter',sans-serif; display:flex; height:100vh; overflow:hidden; }
+  .left { width:280px; flex-shrink:0; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; }
+  .logo { padding:20px 16px 12px; border-bottom:1px solid var(--border); }
+  .logo h1 { font-size:14px; font-weight:700; color:var(--accent); }
+  .logo .tagline { font-size:11px; color:var(--muted); margin-top:2px; }
+  .filters { padding:12px 8px; flex:1; overflow-y:auto; }
+  .filter-group { margin-bottom:16px; }
+  .filter-label { font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; padding:0 8px; margin-bottom:6px; }
+  .filter-btn { display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:6px; cursor:pointer; font-size:12px; color:var(--text); transition:background 0.1s; border:none; background:none; width:100%; text-align:left; }
+  .filter-btn:hover { background:var(--surface2); }
+  .filter-btn.active { background:rgba(124,92,252,0.15); color:var(--accent); }
+  .filter-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .count-badge { margin-left:auto; background:var(--surface2); color:var(--muted); font-size:10px; padding:1px 6px; border-radius:8px; }
+
+  .main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+  .top-bar { padding:14px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; flex-shrink:0; }
+  .search { flex:1; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 12px; color:var(--text); font-size:13px; outline:none; }
+  .search::placeholder { color:var(--muted); }
+  .search:focus { border-color:var(--accent); }
+  .sort-btn { background:var(--surface); border:1px solid var(--border); color:var(--muted); padding:8px 12px; border-radius:8px; font-size:12px; cursor:pointer; white-space:nowrap; }
+
+  .feed { flex:1; overflow-y:auto; padding:12px 16px; display:flex; flex-direction:column; gap:8px; }
+
+  .post { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px 16px; cursor:pointer; transition:border-color 0.15s; }
+  .post:hover { border-color:var(--accent); }
+  .post.pinned { border-color:rgba(124,92,252,0.4); }
+  .post-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .avatar { width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; flex-shrink:0; }
+  .post-meta { flex:1; }
+  .post-name { font-size:12px; font-weight:600; }
+  .post-handle { font-size:11px; color:var(--muted); }
+  .post-time { font-size:11px; color:var(--muted); margin-left:auto; }
+  .post-body { font-size:13px; line-height:1.55; color:var(--text); margin-bottom:8px; }
+  .post-topic { display:inline-block; font-size:10px; font-weight:600; padding:2px 8px; border-radius:10px; text-transform:uppercase; letter-spacing:0.3px; margin-right:4px; }
+  .t-ai { background:rgba(124,92,252,0.2); color:#b39dff; }
+  .t-climate { background:rgba(74,222,128,0.2); color:#86efac; }
+  .t-devtools { background:rgba(79,195,247,0.2); color:#7dd3fc; }
+  .t-saas { background:rgba(251,146,60,0.2); color:#fdba74; }
+  .t-funding { background:rgba(244,114,182,0.2); color:#f9a8d4; }
+  .t-portfolio { background:rgba(248,113,113,0.2); color:#fca5a5; }
+  .post-actions { display:flex; gap:12px; margin-top:8px; }
+  .action { font-size:11px; color:var(--muted); cursor:pointer; padding:4px 8px; border-radius:6px; transition:background 0.1s; }
+  .action:hover { background:var(--surface2); color:var(--text); }
+  .pinned-badge { font-size:10px; color:var(--accent); margin-left:auto; }
+  .relevance { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+</style>
+</head>
+<body>
+
+<div class="left">
+  <div class="logo">
+    <h1>⚡ Warp Intelligence</h1>
+    <div class="tagline">Live signal feed</div>
+  </div>
+  <div class="filters">
+    <div class="filter-group">
+      <div class="filter-label">Topics</div>
+      <button class="filter-btn active" onclick="setFilter('all')">
+        <div class="filter-dot" style="background:#888"></div>All signals
+        <span class="count-badge" id="cnt-all">—</span>
+      </button>
+      <button class="filter-btn" onclick="setFilter('ai')">
+        <div class="filter-dot" style="background:#7c5cfc"></div>AI / ML
+        <span class="count-badge" id="cnt-ai">—</span>
+      </button>
+      <button class="filter-btn" onclick="setFilter('climate')">
+        <div class="filter-dot" style="background:#4ade80"></div>Climate
+        <span class="count-badge" id="cnt-climate">—</span>
+      </button>
+      <button class="filter-btn" onclick="setFilter('devtools')">
+        <div class="filter-dot" style="background:#4fc3f7"></div>Dev Tools
+        <span class="count-badge" id="cnt-devtools">—</span>
+      </button>
+      <button class="filter-btn" onclick="setFilter('saas')">
+        <div class="filter-dot" style="background:#fb923c"></div>B2B SaaS
+        <span class="count-badge" id="cnt-saas">—</span>
+      </button>
+      <button class="filter-btn" onclick="setFilter('funding')">
+        <div class="filter-dot" style="background:#f472b6"></div>Funding
+        <span class="count-badge" id="cnt-funding">—</span>
+      </button>
+      <button class="filter-btn" onclick="setFilter('portfolio')">
+        <div class="filter-dot" style="background:#f87171"></div>Portfolio ⚠
+        <span class="count-badge" id="cnt-portfolio">—</span>
+      </button>
+    </div>
+    <div class="filter-group">
+      <div class="filter-label">Sources</div>
+      <button class="filter-btn" onclick="setFilter('all')"><div class="filter-dot" style="background:#888"></div>All sources</button>
+      <button class="filter-btn" onclick="()=>{}"><div class="filter-dot" style="background:#1da1f2"></div>X / Twitter</button>
+      <button class="filter-btn" onclick="()=>{}"><div class="filter-dot" style="background:#ff6600"></div>Hacker News</button>
+      <button class="filter-btn" onclick="()=>{}"><div class="filter-dot" style="background:#0a66c2"></div>LinkedIn</button>
+      <button class="filter-btn" onclick="()=>{}"><div class="filter-dot" style="background:#888"></div>News sources</button>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="top-bar">
+    <input class="search" id="searchInput" placeholder="Search signals..." oninput="renderFeed()" />
+    <select class="sort-btn" id="sortSelect" onchange="renderFeed()">
+      <option value="time">Latest first</option>
+      <option value="relevance">By relevance</option>
+      <option value="portfolio">Portfolio impact</option>
+    </select>
+  </div>
+  <div class="feed" id="feed"></div>
+</div>
+
+<script>
+const SIGNALS = [
+  { id:1, handle:'@karpathy', name:'Andrej Karpathy', avatar:'AK', avatarBg:'#7c5cfc', time:'2h ago', body:'The next 18 months of AI are about application layer consolidation, not foundation models. We\'ll see 5-10 dominant vertical AI platforms emerge. Horizontal tools will get squeezed hard. Pick your vertical now.', topics:['ai'], relevance:5, pinned:true, source:'x' },
+  { id:2, handle:'@sama', name:'Sam Altman', avatar:'SA', avatarBg:'#10b981', time:'4h ago', body:'We\'re making the API 10x more capable at the same price point by end of Q2. The cost curve for intelligence is bending faster than anyone expected. Build accordingly.', topics:['ai','portfolio'], relevance:5, pinned:true, source:'x' },
+  { id:3, handle:'@EU_Commission', name:'EU Commission', avatar:'EU', avatarBg:'#003399', time:'6h ago', body:'Article 9 carbon verification standards have been formally adopted. Mandatory Scope 3 MRV requirements enter into force January 2027 for all companies with EU operations above €50M revenue.', topics:['climate','portfolio'], relevance:5, pinned:true, source:'x' },
+  { id:4, handle:'@jasonlk', name:'Jason Lemkin', avatar:'JL', avatarBg:'#f59e0b', time:'8h ago', body:'NRR benchmark update: Top SaaS companies in 2026 — Median enterprise NRR now 118%. Top quartile 138%. Bottom quartile 102%. If your NRR is under 110%, you have a retention problem, not a growth problem.', topics:['saas'], relevance:4, pinned:false, source:'x' },
+  { id:5, handle:'@github', name:'GitHub', avatar:'GH', avatarBg:'#333', time:'10h ago', body:'Announcing new pricing for GitHub Actions Enterprise. Teams over 10,000 minutes/month will see updated pricing effective May 1. See our pricing page for details.', topics:['devtools','portfolio'], relevance:5, pinned:false, source:'x' },
+  { id:6, handle:'@ttunguz', name:'Tomasz Tunguz', avatar:'TT', avatarBg:'#e11d48', time:'12h ago', body:'Posted: 2026 State of Cloud SaaS. Key finding: median ARR/employee for Series A SaaS is now $125K, up from $80K in 2023. AI is making teams more capital efficient — not replacing jobs yet, but doing the same with fewer people.', topics:['saas','ai'], relevance:3, pinned:false, source:'x' },
+  { id:7, handle:'@techcrunch', name:'TechCrunch', avatar:'TC', avatarBg:'#0f766e', time:'14h ago', body:'FUNDING: Cognition (Devin AI) raises $200M Series C at $2B valuation. Lead: TBD. Devin is the autonomous software engineer. The agentic developer category just got a $2B anchor.', topics:['ai','funding','portfolio'], relevance:4, pinned:false, source:'news' },
+  { id:8, handle:'@lowercarbon', name:'Lowercarbon Capital', avatar:'LC', avatarBg:'#16a34a', time:'1d ago', body:'Congrats to CarbonChain on their $40M Series B. Satellite-based carbon monitoring is critical infrastructure for the net-zero transition. Excited to lead this round.', topics:['climate','funding','portfolio'], relevance:4, pinned:false, source:'x' },
+  { id:9, handle:'@swyx', name:'swyx', avatar:'SW', avatarBg:'#7c3aed', time:'1d ago', body:'The "AI Engineer" job title is now real. 14K job postings on LinkedIn. They need: agentic workflows, prompt engineering, RAG systems, function calling. This is the buyer for the next generation of AI developer tools.', topics:['ai','devtools'], relevance:3, pinned:false, source:'x' },
+  { id:10, handle:'@PaulG', name:'Paul Graham', avatar:'PG', avatarBg:'#dc2626', time:'1d ago', body:'Climate + AI = the two biggest megatrends of the decade. The founders ignoring either are asleep. The founders combining them are playing a different game entirely.', topics:['ai','climate'], relevance:3, pinned:false, source:'x' },
+  { id:11, handle:'@danluu', name:'Dan Luu', avatar:'DL', avatarBg:'#0369a1', time:'2d ago', body:'Posted a detailed breakdown of CI/CD latency across major platforms. GitHub Actions: 8.2min median. CircleCI: 6.1min. Self-hosted Jenkins: 11.4min. New entrants promising 2-3min. The gap is engineering priority, not fundamental limitation.', topics:['devtools','portfolio'], relevance:4, pinned:false, source:'x' },
+  { id:12, handle:'@ICVCM_org', name:'ICVCM', avatar:'IC', avatarBg:'#166534', time:'2d ago', body:'ICVCM has confirmed CCP label eligibility for hardware-verified monitoring approaches under revised Core Carbon Principles. Physical measurement remains the gold standard for carbon credit integrity.', topics:['climate','portfolio'], relevance:5, pinned:false, source:'x' },
+  { id:13, handle:'@levie', name:'Aaron Levie', avatar:'AL', avatarBg:'#1d4ed8', time:'2d ago', body:'Enterprise AI adoption is still at 12% penetration across Fortune 500. Most of the "AI transformation" projects are still in pilot. The boring stuff — actually replacing existing workflows — is where the real money is.', topics:['ai','saas'], relevance:3, pinned:false, source:'x' },
+  { id:14, handle:'@benedictevans', name:'Benedict Evans', avatar:'BE', avatarBg:'#7e22ce', time:'3d ago', body:'Salesforce has added 47 new "AI features" in the last 12 months across their product suite. The result: more enterprise customers asking why their Salesforce bill went up 30% and they can\'t find the AI value. Consolidation backlash is real.', topics:['saas','portfolio'], relevance:4, pinned:false, source:'x' },
+  { id:15, handle:'@databricks', name:'Databricks', avatar:'DB', avatarBg:'#ff3621', time:'3d ago', body:'Databricks is expanding Unity Catalog to include real-time feature store capabilities. Managed feature freshness SLAs now in preview for Databricks customers.', topics:['ai','devtools','portfolio'], relevance:4, pinned:false, source:'x' },
+];
+
+let activeFilter = 'all';
+
+function setFilter(f) {
+  activeFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  event.target.closest('.filter-btn').classList.add('active');
+  renderFeed();
+}
+
+function renderFeed() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  const sort = document.getElementById('sortSelect').value;
+
+  let filtered = SIGNALS.filter(s => {
+    if (activeFilter !== 'all' && !s.topics.includes(activeFilter)) return false;
+    if (search && !s.body.toLowerCase().includes(search) && !s.name.toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  if (sort === 'relevance') filtered.sort((a,b) => b.relevance - a.relevance);
+  else if (sort === 'portfolio') filtered = [...filtered.filter(s=>s.topics.includes('portfolio')), ...filtered.filter(s=>!s.topics.includes('portfolio'))];
+
+  // Pinned always first
+  const pinned = filtered.filter(s => s.pinned);
+  const rest = filtered.filter(s => !s.pinned);
+  filtered = [...pinned, ...rest];
+
+  const feed = document.getElementById('feed');
+  feed.innerHTML = filtered.length ? filtered.map(renderPost).join('') : '<div style="color:var(--muted);text-align:center;padding:40px;font-size:13px">No signals match your filter</div>';
+
+  // Update counts
+  ['ai','climate','devtools','saas','funding','portfolio'].forEach(t => {
+    const el = document.getElementById('cnt-'+t);
+    if (el) el.textContent = SIGNALS.filter(s=>s.topics.includes(t)).length;
+  });
+  document.getElementById('cnt-all').textContent = SIGNALS.length;
+}
+
+function renderPost(s) {
+  const isPortfolio = s.topics.includes('portfolio');
+  return `<div class="post${s.pinned?' pinned':''}">
+    <div class="post-header">
+      <div class="avatar" style="background:${s.avatarBg}">${s.avatar}</div>
+      <div class="post-meta">
+        <div class="post-name">${s.name} ${isPortfolio ? '⚠' : ''}</div>
+        <div class="post-handle">${s.handle}</div>
+      </div>
+      <div class="post-time">${s.time}</div>
+      ${s.pinned ? '<div class="pinned-badge">📌 Pinned</div>' : ''}
+    </div>
+    <div class="post-body">${s.body}</div>
+    <div>
+      ${s.topics.map(t=>`<span class="post-topic t-${t}">${t}</span>`).join('')}
+    </div>
+    <div class="post-actions">
+      <span class="action">💬 Comment</span>
+      <span class="action">🔖 Save</span>
+      <span class="action">↗ Share to brief</span>
+    </div>
+  </div>`;
+}
+
+renderFeed();
+</script>
+</body>
+</html>

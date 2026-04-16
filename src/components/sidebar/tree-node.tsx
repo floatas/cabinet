@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import {
+  Archive,
   ChevronRight,
   FileText,
   Folder,
@@ -24,11 +25,13 @@ import {
   Music,
   Workflow,
   File,
+  TriangleAlert,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { TreeNode as TreeNodeType } from "@/types";
 import { useTreeStore } from "@/stores/tree-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { useAppStore } from "@/stores/app-store";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -41,18 +44,26 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { LinkRepoDialog } from "./link-repo-dialog";
+import { NewCabinetDialog } from "./new-cabinet-dialog";
 import { getDataDir } from "@/lib/data-dir-cache";
 
 interface TreeNodeProps {
   node: TreeNodeType;
   depth: number;
+  contextCabinetPath?: string | null;
 }
 
-export function TreeNode({ node, depth }: TreeNodeProps) {
+export function TreeNode({
+  node,
+  depth,
+  contextCabinetPath = null,
+}: TreeNodeProps) {
   const {
     selectedPath,
     expandedPaths,
@@ -66,12 +77,15 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
     renamePage,
   } = useTreeStore();
   const loadPage = useEditorStore((s) => s.loadPage);
+  const setSection = useAppStore((s) => s.setSection);
   const [subPageOpen, setSubPageOpen] = useState(false);
   const [subPageTitle, setSubPageTitle] = useState("");
   const [creating, setCreating] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameTitle, setRenameTitle] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [linkRepoOpen, setLinkRepoOpen] = useState(false);
+  const [createCabinetOpen, setCreateCabinetOpen] = useState(false);
 
   const isSelected = selectedPath === node.path;
   const isDragOver = dragOverPath === node.path;
@@ -80,22 +94,34 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
   const title = node.frontmatter?.title || node.name;
 
   const handleClick = () => {
-    if (hasChildren) {
-      toggleExpand(node.path);
-    }
     selectPage(node.path);
+    if (node.type === "cabinet") {
+      loadPage(node.path);
+      setSection({
+        type: "cabinet",
+        mode: "cabinet",
+        cabinetPath: node.path,
+      });
+      return;
+    }
+
     if (node.type === "file" || node.type === "directory") {
       loadPage(node.path);
     }
+
+    setSection(
+      contextCabinetPath
+        ? {
+            type: "page",
+            mode: "cabinet",
+            cabinetPath: contextCabinetPath,
+          }
+        : { type: "page" }
+    );
   };
 
   const handleDelete = () => {
-    const message = node.isLinked
-      ? `Unlink "${title}"? This removes the link but does not delete the original folder.`
-      : `Delete "${title}"?`;
-    if (confirm(message)) {
-      deletePage(node.path);
-    }
+    setDeleteOpen(true);
   };
 
   const handleCreateSubPage = async () => {
@@ -108,7 +134,18 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-|-$/g, "");
-      loadPage(`${node.path}/${slug}`);
+      const nextPath = `${node.path}/${slug}`;
+      selectPage(nextPath);
+      loadPage(nextPath);
+      setSection(
+        contextCabinetPath
+          ? {
+              type: "page",
+              mode: "cabinet",
+              cabinetPath: contextCabinetPath,
+            }
+          : { type: "page" }
+      );
       setSubPageTitle("");
       setSubPageOpen(false);
     } catch (error) {
@@ -191,12 +228,21 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
             style={{ paddingLeft: `${depth * 16 + 8}px` }}
           >
             {hasChildren ? (
-              <ChevronRight
-                className={cn(
-                  "h-3.5 w-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-150",
-                  isExpanded && "rotate-90"
-                )}
-              />
+              <span
+                role="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleExpand(node.path);
+                }}
+                className="shrink-0 flex items-center justify-center w-3.5 h-3.5 rounded hover:bg-accent"
+              >
+                <ChevronRight
+                  className={cn(
+                    "h-3.5 w-3.5 text-muted-foreground/70 transition-transform duration-150",
+                    isExpanded && "rotate-90"
+                  )}
+                />
+              </span>
             ) : (
               <span className="w-3.5" />
             )}
@@ -220,6 +266,8 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
               <Workflow className="h-4 w-4 shrink-0 text-teal-400" />
             ) : node.type === "unknown" ? (
               <File className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+            ) : node.type === "cabinet" ? (
+              <Archive className="h-4 w-4 shrink-0 text-amber-400" />
             ) : node.hasRepo ? (
               <GitBranch className="h-4 w-4 shrink-0 text-orange-400" />
             ) : node.isLinked ? (
@@ -233,7 +281,7 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
             ) : (
               <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
             )}
-            <span className="truncate">{title}</span>
+            <span className={cn("truncate", node.type === "unknown" && "opacity-50")}>{title}</span>
           </button>
         </ContextMenuTrigger>
         <ContextMenuContent>
@@ -244,6 +292,10 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
           <ContextMenuItem onClick={() => setLinkRepoOpen(true)}>
             <GitBranch className="h-4 w-4 mr-2" />
             Load Knowledge
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => setCreateCabinetOpen(true)}>
+            <Archive className="h-4 w-4 mr-2" />
+            Create Cabinet Here
           </ContextMenuItem>
           <ContextMenuItem onClick={() => { setRenameTitle(title); setRenameOpen(true); }}>
             <Pencil className="h-4 w-4 mr-2" />
@@ -285,7 +337,12 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
       {hasChildren && isExpanded && (
         <div>
           {node.children!.map((child) => (
-            <TreeNode key={child.path} node={child} depth={depth + 1} />
+            <TreeNode
+              key={child.path}
+              node={child}
+              depth={depth + 1}
+              contextCabinetPath={contextCabinetPath}
+            />
           ))}
         </div>
       )}
@@ -344,6 +401,59 @@ export function TreeNode({ node, depth }: TreeNodeProps) {
       </Dialog>
 
       <LinkRepoDialog open={linkRepoOpen} onOpenChange={setLinkRepoOpen} parentPath={node.path} />
+
+      <NewCabinetDialog
+        open={createCabinetOpen}
+        onOpenChange={setCreateCabinetOpen}
+        parentPath={node.path}
+      />
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-destructive/10">
+                {node.isLinked
+                  ? <Link2Off className="h-4 w-4 text-destructive" />
+                  : <TriangleAlert className="h-4 w-4 text-destructive" />
+                }
+              </div>
+              <div className="flex flex-col gap-1">
+                <DialogTitle>
+                  {node.isLinked
+                    ? `Unlink "${title}"`
+                    : node.type === "cabinet"
+                      ? `Delete Cabinet "${title}"`
+                      : `Delete "${title}"`
+                  }
+                </DialogTitle>
+                <DialogDescription>
+                  {node.isLinked
+                    ? `This will remove the link from your knowledge base. The original folder on disk will not be affected.`
+                    : node.type === "cabinet"
+                      ? `This will permanently delete the cabinet and everything inside it — all pages, agents, jobs, and tasks. This cannot be undone.`
+                      : `This will permanently delete this ${node.type === "directory" ? "page and all its sub-pages" : "file"}. This cannot be undone.`
+                  }
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          <DialogFooter className="mt-2">
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                deletePage(node.path);
+                setDeleteOpen(false);
+              }}
+            >
+              {node.isLinked ? "Unlink" : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

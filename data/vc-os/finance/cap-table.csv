@@ -1,0 +1,6 @@
+Company,Investment_Date,Round,Round_Total,Warp_Investment,Warp_Ownership_Pct,Lead_Investor,Other_Investors,Post_Money_Val,Current_Est_Val,Warp_Current_Value,Security_Type,Board_Rights
+MintLayer,2024-06-01,Series B,25000000,8000000,6.67,Founders Fund,Tiger Global; Andreessen,120000000,120000000,8000000,Preferred,1 Board Seat
+NeuralFlow,2024-09-01,Series A,18000000,5000000,12.5,Spark Capital,Founders Fund; Warp,40000000,65000000,8125000,Preferred,Observer
+GreenPulse,2024-11-01,Series A,15000000,4000000,11.43,Lowercarbon Capital,Warp; Breakthrough Energy,35000000,52000000,5943000,Preferred,1 Board Seat
+DevForge,2025-02-01,Seed,5000000,2500000,25.0,Warp Ventures,Y Combinator,10000000,22000000,5500000,Preferred,Observer
+DataStream,2025-04-01,Seed,4000000,2000000,16.67,Warp Ventures,Sequoia Scout; angels,12000000,20000000,3334000,Preferred,Observer

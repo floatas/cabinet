@@ -1,0 +1,33 @@
+id: monthly-board-prep
+name: Monthly Board Meeting Prep
+description: Generates board pre-read documents for upcoming portfolio board meetings on the first Monday of each month.
+ownerAgent: portfolio-manager
+agentSlug: portfolio-manager
+enabled: true
+schedule: "0 9 * * 1"
+provider: claude-code
+timeout: 600
+prompt: |-
+  On the first Monday of each month, prepare board meeting pre-reads for upcoming portfolio board meetings.
+
+  1. Check each portfolio company page for any board meeting scheduled in the next 2 weeks
+  2. For each upcoming board meeting, pull:
+     - Latest metrics from their metrics.csv (last 3 months)
+     - Open strategic questions from their company index.md
+     - Any news from their news.md since the last board meeting
+     - Key risks and recent competitive intel
+
+  Write a Board Pre-Read document for each upcoming meeting. Save it as:
+  portfolio/companies/{company-name}/board-prep-{YYYY-MM}.md
+
+  Each pre-read should be structured as:
+  1. Metrics Snapshot (table)
+  2. Strategic Agenda Items (numbered)
+  3. Key Risks to Discuss
+  4. GP Recommendations
+  5. Questions for the CEO
+
+  These are internal Warp documents — candid and specific, not polished LP comms.
+cabinetPath: vc-os
+createdAt: "2026-04-13T00:00:00.000Z"
+updatedAt: "2026-04-13T00:00:00.000Z"

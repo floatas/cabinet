@@ -1,0 +1,10 @@
+schemaVersion: 1
+id: vc-os-root
+name: Warp Ventures OS
+kind: root
+version: 0.1.0
+description: >
+  Operating system for Warp Ventures — a $200M Fund II VC firm focused on AI/ML,
+  developer infrastructure, climate tech, and B2B SaaS. Covers deal flow, portfolio
+  monitoring, LP management, daily intelligence, finance, and team ops.
+entry: index.md
